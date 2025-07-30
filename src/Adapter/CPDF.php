@@ -577,8 +577,7 @@ class CPDF implements Canvas
             'size' => "{$w}x{$h}"
         ]);
 
-        $this->_pdf->rectangle($x1, $this->y($y1) - $h, $w, $h);
-        $this->_pdf->clip();
+        $this->_pdf->clippingRectangle($x1, $this->y($y1) - $h, $w, $h);
     }
 
     public function clipping_roundrectangle($x1, $y1, $w, $h, $rTL, $rTR, $rBR, $rBL)
@@ -613,7 +612,7 @@ class CPDF implements Canvas
         // Log drawing operations if enabled
         $this->_dompdf->log('cpdf_calls', "clipping_end() called", []);
 
-        $this->_pdf->clipEnd();
+        $this->_pdf->clippingEnd();
     }
 
     public function save()
@@ -640,8 +639,7 @@ class CPDF implements Canvas
             'center' => "($x, $y)"
         ]);
 
-        $this->_pdf->addContent(sprintf("
-q %F %F %F %F %F %F cm", cos($angle), sin($angle), -sin($angle), cos($angle), $x, $y));
+        $this->_pdf->rotate($angle, $x, $y);
     }
 
     public function skew($angle_x, $angle_y, $x, $y)
