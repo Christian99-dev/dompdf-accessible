@@ -304,6 +304,13 @@ class Options
     private $debugLayoutPaddingBox = true;
 
     /**
+     * Dynamic logging settings (log_xyz => true/false)
+     *
+     * @var array
+     */
+    private $logSettings = [];
+
+    /**
      * The PDF rendering backend to use
      *
      * Valid settings are 'PDFLib', 'CPDF', 'GD', and 'auto'. 'auto' will
@@ -451,6 +458,9 @@ class Options
                 $this->setPdflibLicense($value);
             } elseif ($key === 'httpContext' || $key === 'http_context') {
                 $this->setHttpContext($value);
+            } elseif (strpos($key, 'log_') === 0) {
+                // Dynamic logging: log_xyz => enable/disable logging for category 'xyz'
+                $this->logSettings[$key] = (bool) $value;
             }
         }
         return $this;
@@ -524,6 +534,9 @@ class Options
             return $this->getPdflibLicense();
         } elseif ($key === 'httpContext' || $key === 'http_context') {
             return $this->getHttpContext();
+        } elseif (strpos($key, 'log_') === 0) {
+            // Dynamic logging getter
+            return isset($this->logSettings[$key]) ? $this->logSettings[$key] : false;
         }
         return null;
     }

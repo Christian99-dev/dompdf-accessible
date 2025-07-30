@@ -1514,4 +1514,29 @@ class Dompdf
                 throw new Exception('Invalid property: ' . $prop);
         }
     }
+
+    /**
+     * Simple dynamic logging method
+     * 
+     * @param string $category The logging category (e.g. 'cpdf_calls', 'frame_tree')
+     * @param string $message The message to log
+     * @param mixed $data Optional data to include with the log
+     */
+    public function log($category, $message, $data = null)
+    {
+        $logKey = 'log_' . $category;
+        if ($this->options->get($logKey)) {
+            $timestamp = date('H:i:s.') . substr(microtime(), 2, 3);
+            echo "[$timestamp][$category] $message";
+            
+            if ($data !== null) {
+                if (is_array($data) || is_object($data)) {
+                    echo " | Data: " . print_r($data, true);
+                } else {
+                    echo " | Data: $data";
+                }
+            }
+            echo "\n";
+        }
+    }
 }

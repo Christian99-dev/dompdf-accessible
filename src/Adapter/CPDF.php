@@ -1,4 +1,5 @@
 <?php
+
 /**
  * @package dompdf
  * @link    https://github.com/dompdf/dompdf
@@ -215,6 +216,12 @@ class CPDF implements Canvas
 
     public function add_info(string $label, string $value): void
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "add_info() called", [
+            'label' => $label,
+            'value' => $value
+        ]);
+
         $this->_pdf->addInfo($label, $value);
     }
 
@@ -234,6 +241,9 @@ class CPDF implements Canvas
      */
     public function open_object()
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "open_object() called", []);
+
         $ret = $this->_pdf->openObject();
         $this->_pdf->saveState();
         return $ret;
@@ -247,6 +257,11 @@ class CPDF implements Canvas
      */
     public function reopen_object($object)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "reopen_object() called", [
+            'object_id' => $object
+        ]);
+
         $this->_pdf->reopenObject($object);
         $this->_pdf->saveState();
     }
@@ -258,6 +273,9 @@ class CPDF implements Canvas
      */
     public function close_object()
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "close_object() called", []);
+
         $this->_pdf->restoreState();
         $this->_pdf->closeObject();
     }
@@ -282,6 +300,12 @@ class CPDF implements Canvas
      */
     public function add_object($object, $where = 'all')
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "add_object() called", [
+            'object_id' => $object,
+            'where' => $where
+        ]);
+
         $this->_pdf->addObject($object, $where);
     }
 
@@ -295,6 +319,11 @@ class CPDF implements Canvas
      */
     public function stop_object($object)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "stop_object() called", [
+            'object_id' => $object
+        ]);
+
         $this->_pdf->stopObject($object);
     }
 
@@ -303,11 +332,19 @@ class CPDF implements Canvas
      */
     public function serialize_object($id)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "serialize_object() called", [
+            'object_id' => $id
+        ]);
+
         return $this->_pdf->serializeObject($id);
     }
 
     public function reopen_serialized_object($obj)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "reopen_serialized_object() called", []);
+
         return $this->_pdf->restoreSerializedObject($obj);
     }
 
@@ -431,6 +468,12 @@ class CPDF implements Canvas
 
     public function set_opacity(float $opacity, string $mode = "Normal"): void
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "set_opacity() called", [
+            'opacity' => $opacity,
+            'mode' => $mode
+        ]);
+
         $this->_set_line_transparency($mode, $opacity);
         $this->_set_fill_transparency($mode, $opacity);
         $this->_current_opacity = $opacity;
@@ -438,6 +481,12 @@ class CPDF implements Canvas
 
     public function set_default_view($view, $options = [])
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "set_default_view() called", [
+            'view' => $view,
+            'options' => $options
+        ]);
+
         array_unshift($options, $view);
         call_user_func_array([$this->_pdf, "openHere"], $options);
     }
@@ -455,16 +504,36 @@ class CPDF implements Canvas
 
     public function line($x1, $y1, $x2, $y2, $color, $width, $style = [], $cap = "butt")
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "line() called", [
+            'from' => "($x1, $y1)",
+            'to' => "($x2, $y2)",
+            'width' => $width
+        ]);
+
         $this->_set_stroke_color($color);
         $this->_set_line_style($width, $cap, "", $style);
 
-        $this->_pdf->line($x1, $this->y($y1),
-            $x2, $this->y($y2));
+        $this->_pdf->line(
+            $x1,
+            $this->y($y1),
+            $x2,
+            $this->y($y2)
+        );
         $this->_set_line_transparency("Normal", $this->_current_opacity);
     }
 
     public function arc($x, $y, $r1, $r2, $astart, $aend, $color, $width, $style = [], $cap = "butt")
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "arc() called", [
+            'center' => "($x, $y)",
+            'radius1' => $r1,
+            'radius2' => $r2,
+            'angles' => "$astart-$aend",
+            'width' => $width
+        ]);
+
         $this->_set_stroke_color($color);
         $this->_set_line_style($width, $cap, "", $style);
 
@@ -474,6 +543,13 @@ class CPDF implements Canvas
 
     public function rectangle($x1, $y1, $w, $h, $color, $width, $style = [], $cap = "butt")
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "rectangle() called", [
+            'position' => "($x1, $y1)",
+            'size' => "${w}x${h}",
+            'width' => $width
+        ]);
+
         $this->_set_stroke_color($color);
         $this->_set_line_style($width, $cap, "", $style);
         $this->_pdf->rectangle($x1, $this->y($y1) - $h, $w, $h);
@@ -482,6 +558,12 @@ class CPDF implements Canvas
 
     public function filled_rectangle($x1, $y1, $w, $h, $color)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "filled_rectangle() called", [
+            'position' => "($x1, $y1)",
+            'size' => "${w}x${h}"
+        ]);
+
         $this->_set_fill_color($color);
         $this->_pdf->filledRectangle($x1, $this->y($y1) - $h, $w, $h);
         $this->_set_fill_transparency("Normal", $this->_current_opacity);
@@ -489,16 +571,35 @@ class CPDF implements Canvas
 
     public function clipping_rectangle($x1, $y1, $w, $h)
     {
-        $this->_pdf->clippingRectangle($x1, $this->y($y1) - $h, $w, $h);
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "clipping_rectangle() called", [
+            'position' => "($x1, $y1)",
+            'size' => "${w}x${h}"
+        ]);
+
+        $this->_pdf->rectangle($x1, $this->y($y1) - $h, $w, $h);
+        $this->_pdf->clip();
     }
 
     public function clipping_roundrectangle($x1, $y1, $w, $h, $rTL, $rTR, $rBR, $rBL)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "clipping_roundrectangle() called", [
+            'position' => "($x1, $y1)",
+            'size' => "${w}x${h}",
+            'radii' => "TL:$rTL, TR:$rTR, BR:$rBR, BL:$rBL"
+        ]);
+
         $this->_pdf->clippingRectangleRounded($x1, $this->y($y1) - $h, $w, $h, $rTL, $rTR, $rBR, $rBL);
     }
 
     public function clipping_polygon(array $points): void
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "clipping_polygon() called", [
+            'points_count' => count($points) / 2
+        ]);
+
         // Adjust y values
         for ($i = 1; $i < count($points); $i += 2) {
             $points[$i] = $this->y($points[$i]);
@@ -509,46 +610,95 @@ class CPDF implements Canvas
 
     public function clipping_end()
     {
-        $this->_pdf->clippingEnd();
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "clipping_end() called", []);
+
+        $this->_pdf->clipEnd();
     }
 
     public function save()
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "save() called", []);
+
         $this->_pdf->saveState();
     }
 
     public function restore()
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "restore() called", []);
+
         $this->_pdf->restoreState();
     }
 
     public function rotate($angle, $x, $y)
     {
-        $this->_pdf->rotate($angle, $x, $y);
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "rotate() called", [
+            'angle' => $angle,
+            'center' => "($x, $y)"
+        ]);
+
+        $this->_pdf->addContent(sprintf("
+q %F %F %F %F %F %F cm", cos($angle), sin($angle), -sin($angle), cos($angle), $x, $y));
     }
 
     public function skew($angle_x, $angle_y, $x, $y)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "skew() called", [
+            'angle_x' => $angle_x,
+            'angle_y' => $angle_y,
+            'center' => "($x, $y)"
+        ]);
+
         $this->_pdf->skew($angle_x, $angle_y, $x, $y);
     }
 
     public function scale($s_x, $s_y, $x, $y)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "scale() called", [
+            'scale_x' => $s_x,
+            'scale_y' => $s_y,
+            'center' => "($x, $y)"
+        ]);
+
         $this->_pdf->scale($s_x, $s_y, $x, $y);
     }
 
     public function translate($t_x, $t_y)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "translate() called", [
+            'translate_x' => $t_x,
+            'translate_y' => $t_y
+        ]);
+
         $this->_pdf->translate($t_x, $t_y);
     }
 
     public function transform($a, $b, $c, $d, $e, $f)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "transform() called", [
+            'matrix' => "[$a, $b, $c, $d, $e, $f]"
+        ]);
+
         $this->_pdf->transform([$a, $b, $c, $d, $e, $f]);
     }
 
     public function polygon($points, $color, $width = null, $style = [], $fill = false)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "polygon() called", [
+            'points_count' => count($points) / 2,
+            'color' => $color,
+            'width' => $width,
+            'fill' => $fill
+        ]);
+
         $this->_set_fill_color($color);
         $this->_set_stroke_color($color);
 
@@ -569,6 +719,15 @@ class CPDF implements Canvas
 
     public function circle($x, $y, $r, $color, $width = null, $style = [], $fill = false)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "circle() called", [
+            'center' => "($x, $y)",
+            'radius' => $r,
+            'color' => $color,
+            'width' => $width,
+            'fill' => $fill
+        ]);
+
         $this->_set_fill_color($color);
         $this->_set_stroke_color($color);
 
@@ -597,7 +756,7 @@ class CPDF implements Canvas
         if ($filename !== null && file_exists($filename)) {
             return $filename;
         }
- 
+
         $func_name = "imagecreatefrom$type";
 
         set_error_handler([Helpers::class, "record_warnings"]);
@@ -637,6 +796,14 @@ class CPDF implements Canvas
 
     public function image($img, $x, $y, $w, $h, $resolution = "normal")
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "image() called", [
+            'image' => basename($img),
+            'position' => "($x, $y)",
+            'size' => "${w}x${h}",
+            'resolution' => $resolution
+        ]);
+
         [$width, $height, $type] = Helpers::dompdf_getimagesize($img, $this->get_dompdf()->getHttpContext());
 
         $debug_png = $this->_dompdf->getOptions()->getDebugPng();
@@ -685,6 +852,15 @@ class CPDF implements Canvas
 
     public function select($x, $y, $w, $h, $font, $size, $color = [0, 0, 0], $opts = [])
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "select() called", [
+            'position' => "($x, $y)",
+            'size' => "${w}x${h}",
+            'font' => $font,
+            'font_size' => $size,
+            'options_count' => count($opts)
+        ]);
+
         $pdf = $this->_pdf;
 
         $pdf->selectFont($font);
@@ -702,6 +878,14 @@ class CPDF implements Canvas
 
     public function textarea($x, $y, $w, $h, $font, $size, $color = [0, 0, 0])
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "textarea() called", [
+            'position' => "($x, $y)",
+            'size' => "${w}x${h}",
+            'font' => $font,
+            'font_size' => $size
+        ]);
+
         $pdf = $this->_pdf;
 
         $pdf->selectFont($font);
@@ -718,6 +902,15 @@ class CPDF implements Canvas
 
     public function input($x, $y, $w, $h, $type, $font, $size, $color = [0, 0, 0])
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "input() called", [
+            'position' => "($x, $y)",
+            'size' => "${w}x${h}",
+            'type' => $type,
+            'font' => $font,
+            'font_size' => $size
+        ]);
+
         $pdf = $this->_pdf;
 
         $pdf->selectFont($font);
@@ -747,6 +940,14 @@ class CPDF implements Canvas
 
     public function text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0)
     {
+        // Log CPDF calls if enabled
+        $this->_dompdf->log('cpdf_calls', "text() called", [
+            'position' => "($x, $y)",
+            'text' => substr($text, 0, 50) . (strlen($text) > 50 ? '...' : ''),
+            'font' => $font,
+            'size' => $size
+        ]);
+
         $pdf = $this->_pdf;
 
         $this->_set_fill_color($color);
@@ -761,6 +962,11 @@ class CPDF implements Canvas
 
     public function javascript($code)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "javascript() called", [
+            'code_length' => strlen($code)
+        ]);
+
         $this->_pdf->addJavascript($code);
     }
 
@@ -768,11 +974,23 @@ class CPDF implements Canvas
 
     public function add_named_dest($anchorname)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "add_named_dest() called", [
+            'anchor' => $anchorname
+        ]);
+
         $this->_pdf->addDestination($anchorname, "Fit");
     }
 
     public function add_link($url, $x, $y, $width, $height)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "add_link() called", [
+            'url' => $url,
+            'position' => "($x, $y)",
+            'size' => "${width}x${height}"
+        ]);
+
         $y = $this->y($y) - $height;
 
         if (strpos($url, '#') === 0) {
@@ -914,6 +1132,14 @@ class CPDF implements Canvas
 
     public function page_text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0)
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "page_text() called", [
+            'position' => "($x, $y)",
+            'text' => substr($text, 0, 50) . (strlen($text) > 50 ? '...' : ''),
+            'font' => $font,
+            'size' => $size
+        ]);
+
         $this->processPageScript(function (int $pageNumber, int $pageCount) use ($x, $y, $text, $font, $size, $color, $word_space, $char_space, $angle) {
             $text = str_replace(
                 ["{PAGE_NUM}", "{PAGE_COUNT}"],
@@ -926,6 +1152,13 @@ class CPDF implements Canvas
 
     public function page_line($x1, $y1, $x2, $y2, $color, $width, $style = [])
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "page_line() called", [
+            'from' => "($x1, $y1)",
+            'to' => "($x2, $y2)",
+            'width' => $width
+        ]);
+
         $this->processPageScript(function () use ($x1, $y1, $x2, $y2, $color, $width, $style) {
             $this->line($x1, $y1, $x2, $y2, $color, $width, $style);
         });
@@ -936,6 +1169,12 @@ class CPDF implements Canvas
      */
     public function new_page()
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "new_page() called", [
+            'page_number' => $this->_page_number + 1,
+            'total_pages' => $this->_page_count + 1
+        ]);
+
         $this->_page_number++;
         $this->_page_count++;
 
@@ -961,6 +1200,12 @@ class CPDF implements Canvas
 
     public function stream($filename = "document.pdf", $options = [])
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "stream() called", [
+            'filename' => $filename,
+            'options' => $options
+        ]);
+
         if (headers_sent()) {
             die("Unable to stream pdf: headers already sent");
         }
@@ -985,6 +1230,11 @@ class CPDF implements Canvas
 
     public function output($options = [])
     {
+        // Log drawing operations if enabled
+        $this->_dompdf->log('cpdf_calls', "output() called", [
+            'options' => $options
+        ]);
+
         if (!isset($options["compress"])) $options["compress"] = true;
 
         $debug = !$options['compress'];
