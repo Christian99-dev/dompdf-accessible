@@ -140,6 +140,9 @@ class Page extends AbstractFrameReflower
             }
 
             $child->reflow();
+
+            $this->get_dompdf()->log('frametree', $child);
+
             $next_child = $child->get_next_sibling();
 
             // Check for begin render callback
