@@ -546,7 +546,7 @@ class CPDF implements Canvas
         // Log drawing operations if enabled
         $this->_dompdf->log('cpdf_calls', "rectangle() called", [
             'position' => "($x1, $y1)",
-            'size' => "${w}x${h}",
+            'size' => "{$w}x{$h}",
             'width' => $width
         ]);
 
@@ -561,7 +561,7 @@ class CPDF implements Canvas
         // Log drawing operations if enabled
         $this->_dompdf->log('cpdf_calls', "filled_rectangle() called", [
             'position' => "($x1, $y1)",
-            'size' => "${w}x${h}"
+            'size' => "{$w}x{$h}"
         ]);
 
         $this->_set_fill_color($color);
@@ -574,7 +574,7 @@ class CPDF implements Canvas
         // Log drawing operations if enabled
         $this->_dompdf->log('cpdf_calls', "clipping_rectangle() called", [
             'position' => "($x1, $y1)",
-            'size' => "${w}x${h}"
+            'size' => "{$w}x{$h}"
         ]);
 
         $this->_pdf->rectangle($x1, $this->y($y1) - $h, $w, $h);
@@ -586,7 +586,7 @@ class CPDF implements Canvas
         // Log drawing operations if enabled
         $this->_dompdf->log('cpdf_calls', "clipping_roundrectangle() called", [
             'position' => "($x1, $y1)",
-            'size' => "${w}x${h}",
+            'size' => "{$w}x{$h}",
             'radii' => "TL:$rTL, TR:$rTR, BR:$rBR, BL:$rBL"
         ]);
 
@@ -800,7 +800,7 @@ q %F %F %F %F %F %F cm", cos($angle), sin($angle), -sin($angle), cos($angle), $x
         $this->_dompdf->log('cpdf_calls', "image() called", [
             'image' => basename($img),
             'position' => "($x, $y)",
-            'size' => "${w}x${h}",
+            'size' => "{$w}x{$h}",
             'resolution' => $resolution
         ]);
 
@@ -855,7 +855,7 @@ q %F %F %F %F %F %F cm", cos($angle), sin($angle), -sin($angle), cos($angle), $x
         // Log drawing operations if enabled
         $this->_dompdf->log('cpdf_calls', "select() called", [
             'position' => "($x, $y)",
-            'size' => "${w}x${h}",
+            'size' => "{$w}x{$h}",
             'font' => $font,
             'font_size' => $size,
             'options_count' => count($opts)
@@ -881,7 +881,7 @@ q %F %F %F %F %F %F cm", cos($angle), sin($angle), -sin($angle), cos($angle), $x
         // Log drawing operations if enabled
         $this->_dompdf->log('cpdf_calls', "textarea() called", [
             'position' => "($x, $y)",
-            'size' => "${w}x${h}",
+            'size' => "{$w}x{$h}",
             'font' => $font,
             'font_size' => $size
         ]);
@@ -905,7 +905,7 @@ q %F %F %F %F %F %F cm", cos($angle), sin($angle), -sin($angle), cos($angle), $x
         // Log drawing operations if enabled
         $this->_dompdf->log('cpdf_calls', "input() called", [
             'position' => "($x, $y)",
-            'size' => "${w}x${h}",
+            'size' => "{$w}x{$h}",
             'type' => $type,
             'font' => $font,
             'font_size' => $size
@@ -988,7 +988,7 @@ q %F %F %F %F %F %F cm", cos($angle), sin($angle), -sin($angle), cos($angle), $x
         $this->_dompdf->log('cpdf_calls', "add_link() called", [
             'url' => $url,
             'position' => "($x, $y)",
-            'size' => "${width}x${height}"
+            'size' => "{$width}x{$height}"
         ]);
 
         $y = $this->y($y) - $height;
