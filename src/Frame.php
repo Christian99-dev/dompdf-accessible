@@ -132,6 +132,34 @@ class Frame
     protected $_is_cache = [];
 
     /**
+     * Semantic tag information for accessibility
+     *
+     * @var string|null
+     */
+    protected $_semantic_tag;
+
+    /**
+     * ARIA role attribute for accessibility
+     *
+     * @var string|null
+     */
+    protected $_aria_role;
+
+    /**
+     * ARIA label attribute for accessibility
+     *
+     * @var string|null
+     */
+    protected $_aria_label;
+
+    /**
+     * ARIA describedby attribute for accessibility
+     *
+     * @var string|null
+     */
+    protected $_aria_describedby;
+
+    /**
      * Tells whether the frame was already pushed to the next page
      *
      * @var bool
@@ -1234,5 +1262,85 @@ class Frame
         }
 
         return $str;
+    }
+
+    /**
+     * Get the semantic tag for this frame
+     *
+     * @return string|null
+     */
+    public function get_semantic_tag()
+    {
+        return $this->_semantic_tag;
+    }
+
+    /**
+     * Set the semantic tag for this frame
+     *
+     * @param string $tag The semantic tag (e.g., 'Document', 'Header', 'Footer')
+     */
+    public function set_semantic_tag($tag)
+    {
+        $this->_semantic_tag = $tag;
+    }
+
+    /**
+     * Get the ARIA role for this frame
+     *
+     * @return string|null
+     */
+    public function get_aria_role()
+    {
+        return $this->_aria_role;
+    }
+
+    /**
+     * Set the ARIA role for this frame
+     *
+     * @param string $role The ARIA role
+     */
+    public function set_aria_role($role)
+    {
+        $this->_aria_role = $role;
+    }
+
+    /**
+     * Get the ARIA label for this frame
+     *
+     * @return string|null
+     */
+    public function get_aria_label()
+    {
+        return $this->_aria_label;
+    }
+
+    /**
+     * Set the ARIA label for this frame
+     *
+     * @param string $label The ARIA label
+     */
+    public function set_aria_label($label)
+    {
+        $this->_aria_label = $label;
+    }
+
+    /**
+     * Get the ARIA describedby for this frame
+     *
+     * @return string|null
+     */
+    public function get_aria_describedby()
+    {
+        return $this->_aria_describedby;
+    }
+
+    /**
+     * Set the ARIA describedby for this frame
+     *
+     * @param string $describedBy The ARIA describedby attribute
+     */
+    public function set_aria_describedby($describedBy)
+    {
+        $this->_aria_describedby = $describedBy;
     }
 }
