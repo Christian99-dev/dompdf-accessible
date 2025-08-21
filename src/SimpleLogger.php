@@ -13,7 +13,8 @@ class SimpleLogger
     public static function log(string $channel, string $functionName, string $message): void
     {
         if (isset(self::$enabledChannels[$channel])) {
-            echo "[{$channel}] | [{$functionName}](): {$message}\n";
+            // Use stderr to avoid interfering with stdout JSON output in tests
+            fwrite(STDERR, "[{$channel}] | [{$functionName}](): {$message}\n");
         }
     }
 }
