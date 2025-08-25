@@ -14,7 +14,8 @@ class SimpleLogger
     {
         if (isset(self::$enabledChannels[$channel])) {
             // Use stderr to avoid interfering with stdout JSON output in tests
-            fwrite(STDERR, "[{$channel}] | [{$functionName}](): {$message}\n");
+            fwrite(STDERR, "[$channel] " . str_pad($functionName . "():", 30, "_") . $message . "\n");
+            // echo "[$channel] " . str_pad($functionName . "():", 30, "_") . $message . "\n";
         }
     }
 }
