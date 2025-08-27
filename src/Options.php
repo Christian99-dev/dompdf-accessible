@@ -304,6 +304,13 @@ class Options
     private $debugLayoutPaddingBox = true;
 
     /**
+     * Logger options storage (for logging channels and other dynamic options)
+     *
+     * @var array
+     */
+    private $loggerOptions = [];
+
+    /**
      * The PDF rendering backend to use
      *
      * Valid settings are 'PDFLib', 'CPDF', 'GD', and 'auto'. 'auto' will
@@ -451,6 +458,8 @@ class Options
                 $this->setPdflibLicense($value);
             } elseif ($key === 'httpContext' || $key === 'http_context') {
                 $this->setHttpContext($value);
+            } elseif (substr($key, -5) === '_logs') {
+                $this->loggerOptions[$key] = $value;
             }
         }
         return $this;
@@ -524,8 +533,19 @@ class Options
             return $this->getPdflibLicense();
         } elseif ($key === 'httpContext' || $key === 'http_context') {
             return $this->getHttpContext();
+        } elseif (substr($key, -5) === '_logs') {
+            return isset($this->loggerOptions[$key]) ? $this->loggerOptions[$key] : false;
         }
         return null;
+    }
+
+    /**
+     * Get all custom options (for *_logs handling)
+     * @return array
+     */
+    public function getLoggerOptions()
+    {
+        return $this->loggerOptions;
     }
 
     /**

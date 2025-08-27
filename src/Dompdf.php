@@ -268,6 +268,13 @@ class Dompdf
 
         $this->setPhpConfig();
 
+        // Initialize logging channels based on *_logs options
+        foreach ($this->options->getLoggerOptions() as $key => $value) {
+            if (substr($key, -5) === '_logs' && $value) {
+                SimpleLogger::enableChannel($key);
+            }
+        }
+
         $this->paperSize = $this->options->getDefaultPaperSize();
         $this->paperOrientation = $this->options->getDefaultPaperOrientation();
 

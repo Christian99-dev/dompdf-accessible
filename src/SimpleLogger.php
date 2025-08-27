@@ -1,6 +1,5 @@
 <?php
 namespace Dompdf;
-
 class SimpleLogger
 {
     private static $enabledChannels = [];
