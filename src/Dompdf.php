@@ -815,8 +815,18 @@ class Dompdf
         $root->set_containing_block(0, 0, $canvas->get_width(), $canvas->get_height());
         $root->set_renderer(new Renderer($this));
 
+        // beacause of perfomace reasons the frametree is wiped after the reflow proccess
+        // so to inspect the frametree use the callbacks wich give us information about the tree
+        SimpleLogger::setupFrameTreeCallback($this, "frametree_logs");
+
+        SimpleLogger::log("frametree_logs","render", "Reflow started > ");
+        SimpleLogger::logFrameTree("frametree_logs", "render_before_reflow", $root);
         // This is where the magic happens:
         $root->reflow();
+        SimpleLogger::log("frametree_logs","render", "Reflow finished < ");
+
+        
+
 
         if (isset($this->callbacks["end_document"])) {
             $fs = $this->callbacks["end_document"];
