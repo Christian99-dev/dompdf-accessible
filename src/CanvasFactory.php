@@ -43,7 +43,11 @@ class CanvasFactory
             ) {
                 $class = "Dompdf\\Adapter\\PDFLib";
             }
-
+            elseif (($backend === "tcpdf") &&
+                class_exists("TCPDF", false)
+            ) {
+                $class = "Dompdf\\Adapter\\TCPDF";
+            }
             else {
                 if (class_exists($backend, false)) {
                     $class = $backend;
