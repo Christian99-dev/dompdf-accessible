@@ -10,6 +10,7 @@ namespace Dompdf\Adapter;
 use Dompdf\Canvas;
 use Dompdf\Dompdf;
 use Dompdf\SimpleLogger;
+use TCPDF as TCPDFLibrary;
 
 /**
  * TCPDF rendering interface
@@ -21,21 +22,153 @@ use Dompdf\SimpleLogger;
  */
 class TCPDF implements Canvas
 {
-   /**
+    /**
+     * Dimensions of paper sizes in points
+     *
+     * @var array
+     */
+    static $PAPER_SIZES = [
+        "4a0" => [0.0, 0.0, 4767.87, 6740.79],
+        "2a0" => [0.0, 0.0, 3370.39, 4767.87],
+        "a0" => [0.0, 0.0, 2383.94, 3370.39],
+        "a1" => [0.0, 0.0, 1683.78, 2383.94],
+        "a2" => [0.0, 0.0, 1190.55, 1683.78],
+        "a3" => [0.0, 0.0, 841.89, 1190.55],
+        "a4" => [0.0, 0.0, 595.28, 841.89],
+        "a5" => [0.0, 0.0, 419.53, 595.28],
+        "a6" => [0.0, 0.0, 297.64, 419.53],
+        "a7" => [0.0, 0.0, 209.76, 297.64],
+        "a8" => [0.0, 0.0, 147.40, 209.76],
+        "a9" => [0.0, 0.0, 104.88, 147.40],
+        "a10" => [0.0, 0.0, 73.70, 104.88],
+        "b0" => [0.0, 0.0, 2834.65, 4008.19],
+        "b1" => [0.0, 0.0, 2004.09, 2834.65],
+        "b2" => [0.0, 0.0, 1417.32, 2004.09],
+        "b3" => [0.0, 0.0, 1000.63, 1417.32],
+        "b4" => [0.0, 0.0, 708.66, 1000.63],
+        "b5" => [0.0, 0.0, 498.90, 708.66],
+        "b6" => [0.0, 0.0, 354.33, 498.90],
+        "b7" => [0.0, 0.0, 249.45, 354.33],
+        "b8" => [0.0, 0.0, 175.75, 249.45],
+        "b9" => [0.0, 0.0, 124.72, 175.75],
+        "b10" => [0.0, 0.0, 87.87, 124.72],
+        "c0" => [0.0, 0.0, 2599.37, 3676.54],
+        "c1" => [0.0, 0.0, 1836.85, 2599.37],
+        "c2" => [0.0, 0.0, 1298.27, 1836.85],
+        "c3" => [0.0, 0.0, 918.43, 1298.27],
+        "c4" => [0.0, 0.0, 649.13, 918.43],
+        "c5" => [0.0, 0.0, 459.21, 649.13],
+        "c6" => [0.0, 0.0, 323.15, 459.21],
+        "c7" => [0.0, 0.0, 229.61, 323.15],
+        "c8" => [0.0, 0.0, 161.57, 229.61],
+        "c9" => [0.0, 0.0, 113.39, 161.57],
+        "c10" => [0.0, 0.0, 79.37, 113.39],
+        "ra0" => [0.0, 0.0, 2437.80, 3458.27],
+        "ra1" => [0.0, 0.0, 1729.13, 2437.80],
+        "ra2" => [0.0, 0.0, 1218.90, 1729.13],
+        "ra3" => [0.0, 0.0, 864.57, 1218.90],
+        "ra4" => [0.0, 0.0, 609.45, 864.57],
+        "sra0" => [0.0, 0.0, 2551.18, 3628.35],
+        "sra1" => [0.0, 0.0, 1814.17, 2551.18],
+        "sra2" => [0.0, 0.0, 1275.59, 1814.17],
+        "sra3" => [0.0, 0.0, 907.09, 1275.59],
+        "sra4" => [0.0, 0.0, 637.80, 907.09],
+        "letter" => [0.0, 0.0, 612.00, 792.00],
+        "half-letter" => [0.0, 0.0, 396.00, 612.00],
+        "legal" => [0.0, 0.0, 612.00, 1008.00],
+        "ledger" => [0.0, 0.0, 1224.00, 792.00],
+        "tabloid" => [0.0, 0.0, 792.00, 1224.00],
+        "executive" => [0.0, 0.0, 521.86, 756.00],
+        "folio" => [0.0, 0.0, 612.00, 936.00],
+        "commercial #10 envelope" => [0.0, 0.0, 684.00, 297.00],
+        "catalog #10 1/2 envelope" => [0.0, 0.0, 648.00, 864.00],
+        "8.5x11" => [0.0, 0.0, 612.00, 792.00],
+        "8.5x14" => [0.0, 0.0, 612.00, 1008.00],
+        "11x17" => [0.0, 0.0, 792.00, 1224.00],
+    ];
+
+    /**
+     * @var TCPDFLibrary
+     */
+    protected $_pdf;
+
+    /**
+     * @var Dompdf
+     */
+    protected $_dompdf;
+
+    /**
+     * @var float
+     */
+    protected $_width;
+
+    /**
+     * @var float
+     */
+    protected $_height;
+
+    /**
      * @param string|float[] $paper       The paper size to use as either a standard paper size (see {@link Dompdf\Adapter\CPDF::$PAPER_SIZES})
      *                                    or an array of the form `[x1, y1, x2, y2]` (typically `[0, 0, width, height]`).
      * @param string         $orientation The paper orientation, either `portrait` or `landscape`.
      * @param Dompdf|null    $dompdf      The Dompdf instance.
      */
     public function __construct($paper = "letter", string $orientation = "portrait", ?Dompdf $dompdf = null) {
-        SimpleLogger::log('tcpdf_logs', '1. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '1. ' . __FUNCTION__, "Constructing TCPDF with paper: {$paper}, orientation: {$orientation}");
+        
+        if (is_array($paper)) {
+            $size = array_map("floatval", $paper);
+        } else {
+            $paper = strtolower($paper);
+            $size = self::$PAPER_SIZES[$paper] ?? self::$PAPER_SIZES["letter"];
+        }
+
+        if (strtolower($orientation) === "landscape") {
+            [$size[2], $size[3]] = [$size[3], $size[2]];
+        }
+
+        if ($dompdf === null) {
+            $this->_dompdf = new Dompdf();
+        } else {
+            $this->_dompdf = $dompdf;
+        }
+
+        // Convert to TCPDF format - TCPDF uses width and height in mm
+        $width_mm = ($size[2] - $size[0]) * 0.352778; // Convert points to mm
+        $height_mm = ($size[3] - $size[1]) * 0.352778; // Convert points to mm
+
+        // Initialize TCPDF
+        $tcpdf_orientation = strtolower($orientation) === "landscape" ? 'L' : 'P';
+        $this->_pdf = new TCPDFLibrary($tcpdf_orientation, 'pt', [$size[2] - $size[0], $size[3] - $size[1]], true, 'UTF-8', false);
+
+        // Set document information
+        $this->_pdf->SetCreator(sprintf("%s + TCPDF", $this->_dompdf->version ?? 'dompdf'));
+        $this->_pdf->SetAuthor('dompdf + TCPDF');
+        $this->_pdf->SetTitle('');
+        $this->_pdf->SetSubject('');
+        $this->_pdf->SetKeywords('');
+
+        // Remove default header/footer
+        $this->_pdf->setPrintHeader(false);
+        $this->_pdf->setPrintFooter(false);
+
+        // Set margins to 0
+        $this->_pdf->SetMargins(0, 0, 0);
+        $this->_pdf->SetAutoPageBreak(false, 0);
+
+        // Add first page
+        $this->_pdf->AddPage();
+
+        $this->_width = $size[2] - $size[0];
+        $this->_height = $size[3] - $size[1];
     }
 
     /**
      * @return Dompdf
      */
     function get_dompdf() {
-        SimpleLogger::log('tcpdf_logs', '2. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '2. ' . __FUNCTION__, "Returning dompdf instance");
+        return $this->_dompdf;
     }
 
     /**
@@ -483,7 +616,8 @@ class TCPDF implements Canvas
      * @return float
      */
     function get_width() {
-        SimpleLogger::log('tcpdf_logs', '38. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '38. ' . __FUNCTION__, "Returning width: {$this->_width}");
+        return $this->_width;
     }
 
     /**
@@ -492,7 +626,8 @@ class TCPDF implements Canvas
      * @return float
      */
     function get_height() {
-        SimpleLogger::log('tcpdf_logs', '39. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '39. ' . __FUNCTION__, "Returning height: {$this->_height}");
+        return $this->_height;
     }
 
     /**
@@ -557,6 +692,16 @@ class TCPDF implements Canvas
      * @return string
      */
     function output($options = []) {
-        SimpleLogger::log('tcpdf_logs', '42. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '42. ' . __FUNCTION__, "Generating PDF output");
+        
+        // Set compression option (default is enabled)
+        $compress = $options['compress'] ?? 1;
+        if ($compress) {
+            $this->_pdf->setCompression(true);
+        } else {
+            $this->_pdf->setCompression(false);
+        }
+        
+        return $this->_pdf->Output('', 'S');
     }
 }
