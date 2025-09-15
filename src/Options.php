@@ -313,7 +313,7 @@ class Options
     /**
      * The PDF rendering backend to use
      *
-     * Valid settings are 'PDFLib', 'CPDF', 'GD', and 'auto'. 'auto' will
+     * Valid settings are 'PDFLib', 'CPDF', 'TCPDF', 'GD', and 'auto'. 'auto' will
      * look for PDFLib and use it if found, or if not it will fall back on
      * CPDF. 'GD' renders PDFs to graphic files. {@link Dompdf\CanvasFactory}
      * ultimately determines which rendering class to instantiate
