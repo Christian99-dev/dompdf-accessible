@@ -214,13 +214,13 @@ class CPDF implements Canvas
      */
     public function get_cpdf()
     {
-        SimpleLogger::log('cpdf_logs', '68. ' . __FUNCTION__, "Getting Cpdf instance");
+        SimpleLogger::log('cpdf_logs', '63. ' . __FUNCTION__, "Getting Cpdf instance");
         return $this->_pdf;
     }
 
     public function add_info(string $label, string $value): void
     {
-        SimpleLogger::log('cpdf_logs', '65. ' . __FUNCTION__, "Adding info: {$label} = {$value}");
+        SimpleLogger::log('cpdf_logs', '36. ' . __FUNCTION__, "Adding info: {$label} = {$value}");
         $this->_pdf->addInfo($label, $value);
     }
 
@@ -240,7 +240,7 @@ class CPDF implements Canvas
      */
     public function open_object()
     {
-        SimpleLogger::log('cpdf_logs', '10. ' . __FUNCTION__, "Opening new object");
+        SimpleLogger::log('cpdf_logs', '43. ' . __FUNCTION__, "Opening new object");
         $ret = $this->_pdf->openObject();
         $this->_pdf->saveState();
         return $ret;
@@ -254,7 +254,7 @@ class CPDF implements Canvas
      */
     public function reopen_object($object)
     {
-        SimpleLogger::log('cpdf_logs', '11. ' . __FUNCTION__, "Reopening object: {$object}");
+        SimpleLogger::log('cpdf_logs', '44. ' . __FUNCTION__, "Reopening object: {$object}");
         $this->_pdf->reopenObject($object);
         $this->_pdf->saveState();
     }
@@ -266,7 +266,7 @@ class CPDF implements Canvas
      */
     public function close_object()
     {
-        SimpleLogger::log('cpdf_logs', '12. ' . __FUNCTION__, "Closing object");
+        SimpleLogger::log('cpdf_logs', '45. ' . __FUNCTION__, "Closing object");
         $this->_pdf->restoreState();
         $this->_pdf->closeObject();
     }
@@ -291,7 +291,7 @@ class CPDF implements Canvas
      */
     public function add_object($object, $where = 'all')
     {
-        SimpleLogger::log('cpdf_logs', '13. ' . __FUNCTION__, "Adding object: {$object} where: {$where}");
+        SimpleLogger::log('cpdf_logs', '46. ' . __FUNCTION__, "Adding object: {$object} where: {$where}");
         $this->_pdf->addObject($object, $where);
     }
 
@@ -305,7 +305,7 @@ class CPDF implements Canvas
      */
     public function stop_object($object)
     {
-        SimpleLogger::log('cpdf_logs', '14. ' . __FUNCTION__, "Stopping object: {$object}");
+        SimpleLogger::log('cpdf_logs', '47. ' . __FUNCTION__, "Stopping object: {$object}");
         $this->_pdf->stopObject($object);
     }
 
@@ -314,13 +314,13 @@ class CPDF implements Canvas
      */
     public function serialize_object($id)
     {
-        SimpleLogger::log('cpdf_logs','15. ' .  __FUNCTION__, "Serializing object: {$id}");
+        SimpleLogger::log('cpdf_logs','48. ' .  __FUNCTION__, "Serializing object: {$id}");
         return $this->_pdf->serializeObject($id);
     }
 
     public function reopen_serialized_object($obj)
     {
-        SimpleLogger::log('cpdf_logs', '16. ' . __FUNCTION__, "Reopening serialized object");
+        SimpleLogger::log('cpdf_logs', '49. ' . __FUNCTION__, "Reopening serialized object");
         return $this->_pdf->restoreSerializedObject($obj);
     }
 
@@ -328,25 +328,25 @@ class CPDF implements Canvas
 
     public function get_width()
     {
-        SimpleLogger::log('cpdf_logs', '3. ' . __FUNCTION__, "Getting width: {$this->_width}");
+        SimpleLogger::log('cpdf_logs', '38. ' . __FUNCTION__, "Getting width: {$this->_width}");
         return $this->_width;
     }
 
     public function get_height()
     {
-        SimpleLogger::log('cpdf_logs', '4. ' . __FUNCTION__, "Getting height: {$this->_height}");
+        SimpleLogger::log('cpdf_logs', '39. ' . __FUNCTION__, "Getting height: {$this->_height}");
         return $this->_height;
     }
 
     public function get_page_number()
     {
-        SimpleLogger::log('cpdf_logs', '5. ' . __FUNCTION__, "Getting page number: {$this->_page_number}");
+        SimpleLogger::log('cpdf_logs', '3. ' . __FUNCTION__, "Getting page number: {$this->_page_number}");
         return $this->_page_number;
     }
 
     public function get_page_count()
     {
-        SimpleLogger::log('cpdf_logs', '6. ' . __FUNCTION__, "Getting page count: {$this->_page_count}");
+        SimpleLogger::log('cpdf_logs', '4. ' . __FUNCTION__, "Getting page count: {$this->_page_count}");
         return $this->_page_count;
     }
 
@@ -357,13 +357,13 @@ class CPDF implements Canvas
      */
     public function set_page_number($num)
     {
-        SimpleLogger::log('cpdf_logs', '7. ' . __FUNCTION__, "Setting page number to: {$num}");
+        SimpleLogger::log('cpdf_logs', '50. ' . __FUNCTION__, "Setting page number to: {$num}");
         $this->_page_number = $num;
     }
 
     public function set_page_count($count)
     {
-        SimpleLogger::log('cpdf_logs', '8. ' . __FUNCTION__, "Setting page count to: {$count}");
+        SimpleLogger::log('cpdf_logs', '5. ' . __FUNCTION__, "Setting page count to: {$count}");
         $this->_page_count = $count;
     }
 
@@ -376,7 +376,7 @@ class CPDF implements Canvas
      */
     protected function _set_stroke_color($color)
     {
-        SimpleLogger::log('cpdf_logs', '56. ' . __FUNCTION__, "Setting stroke color");
+        SimpleLogger::log('cpdf_logs', '51. ' . __FUNCTION__, "Setting stroke color");
         $this->_pdf->setStrokeColor($color);
         $alpha = isset($color["alpha"]) ? $color["alpha"] : 1;
         $alpha *= $this->_current_opacity;
@@ -392,7 +392,7 @@ class CPDF implements Canvas
      */
     protected function _set_fill_color($color)
     {
-        SimpleLogger::log('cpdf_logs', '57. ' . __FUNCTION__, "Setting fill color");
+        SimpleLogger::log('cpdf_logs', '52. ' . __FUNCTION__, "Setting fill color");
         $this->_pdf->setColor($color);
         $alpha = isset($color["alpha"]) ? $color["alpha"] : 1;
         $alpha *= $this->_current_opacity;
@@ -414,7 +414,7 @@ class CPDF implements Canvas
      */
     protected function _set_line_transparency($mode, $opacity)
     {
-        SimpleLogger::log('cpdf_logs', '60. ' . __FUNCTION__, "Setting line transparency mode: {$mode}, opacity: {$opacity}");
+        SimpleLogger::log('cpdf_logs', '53. ' . __FUNCTION__, "Setting line transparency mode: {$mode}, opacity: {$opacity}");
         $this->_pdf->setLineTransparency($mode, $opacity);
     }
 
@@ -433,7 +433,7 @@ class CPDF implements Canvas
      */
     protected function _set_fill_transparency($mode, $opacity)
     {
-        SimpleLogger::log('cpdf_logs', '61. ' . __FUNCTION__, "Setting fill transparency mode: {$mode}, opacity: {$opacity}");
+        SimpleLogger::log('cpdf_logs', '54. ' . __FUNCTION__, "Setting fill transparency mode: {$mode}, opacity: {$opacity}");
         $this->_pdf->setFillTransparency($mode, $opacity);
     }
 
@@ -455,7 +455,7 @@ class CPDF implements Canvas
 
     public function set_opacity(float $opacity, string $mode = "Normal"): void
     {
-        SimpleLogger::log('cpdf_logs', '53. ' . __FUNCTION__, "Setting opacity: {$opacity} mode: {$mode}");
+        SimpleLogger::log('cpdf_logs', '40. ' . __FUNCTION__, "Setting opacity: {$opacity} mode: {$mode}");
         $this->_set_line_transparency($mode, $opacity);
         $this->_set_fill_transparency($mode, $opacity);
         $this->_current_opacity = $opacity;
@@ -463,7 +463,7 @@ class CPDF implements Canvas
 
     public function set_default_view($view, $options = [])
     {
-        SimpleLogger::log('cpdf_logs', '54. ' . __FUNCTION__, "Setting default view: {$view}");
+        SimpleLogger::log('cpdf_logs', '37. ' . __FUNCTION__, "Setting default view: {$view}");
         array_unshift($options, $view);
         call_user_func_array([$this->_pdf, "openHere"], $options);
     }
@@ -476,12 +476,13 @@ class CPDF implements Canvas
      */
     protected function y($y)
     {
+        SimpleLogger::log('cpdf_logs', '56. ' . __FUNCTION__, "Remapping y coordinate: {$y}");
         return $this->_height - $y;
     }
 
     public function line($x1, $y1, $x2, $y2, $color, $width, $style = [], $cap = "butt")
     {
-        SimpleLogger::log('cpdf_logs', '18. ' . __FUNCTION__, "Drawing line from ({$x1}, {$y1}) to ({$x2}, {$y2})");
+        SimpleLogger::log('cpdf_logs', '7. ' . __FUNCTION__, "Drawing line from ({$x1}, {$y1}) to ({$x2}, {$y2})");
         $this->_set_stroke_color($color);
         $this->_set_line_style($width, $cap, "", $style);
 
@@ -492,7 +493,7 @@ class CPDF implements Canvas
 
     public function arc($x, $y, $r1, $r2, $astart, $aend, $color, $width, $style = [], $cap = "butt")
     {
-        SimpleLogger::log('cpdf_logs', '19. ' . __FUNCTION__, "Drawing arc at ({$x}, {$y}) with radii {$r1}, {$r2}");
+        SimpleLogger::log('cpdf_logs', '8. ' . __FUNCTION__, "Drawing arc at ({$x}, {$y}) with radii {$r1}, {$r2}");
         $this->_set_stroke_color($color);
         $this->_set_line_style($width, $cap, "", $style);
 
@@ -502,7 +503,7 @@ class CPDF implements Canvas
 
     public function rectangle($x1, $y1, $w, $h, $color, $width, $style = [], $cap = "butt")
     {
-        SimpleLogger::log('cpdf_logs', '20. ' . __FUNCTION__, "Drawing rectangle at ({$x1}, {$y1}) size {$w}x{$h}");
+        SimpleLogger::log('cpdf_logs', '9. ' . __FUNCTION__, "Drawing rectangle at ({$x1}, {$y1}) size {$w}x{$h}");
         $this->_set_stroke_color($color);
         $this->_set_line_style($width, $cap, "", $style);
         $this->_pdf->rectangle($x1, $this->y($y1) - $h, $w, $h);
@@ -511,7 +512,7 @@ class CPDF implements Canvas
 
     public function filled_rectangle($x1, $y1, $w, $h, $color)
     {
-        SimpleLogger::log('cpdf_logs', '21. ' . __FUNCTION__, "Drawing filled rectangle at ({$x1}, {$y1}) size {$w}x{$h}");
+        SimpleLogger::log('cpdf_logs', '10. ' . __FUNCTION__, "Drawing filled rectangle at ({$x1}, {$y1}) size {$w}x{$h}");
         $this->_set_fill_color($color);
         $this->_pdf->filledRectangle($x1, $this->y($y1) - $h, $w, $h);
         $this->_set_fill_transparency("Normal", $this->_current_opacity);
@@ -519,19 +520,19 @@ class CPDF implements Canvas
 
     public function clipping_rectangle($x1, $y1, $w, $h)
     {
-        SimpleLogger::log('cpdf_logs', '24. ' . __FUNCTION__, "Setting clipping rectangle at ({$x1}, {$y1}) size {$w}x{$h}");
+        SimpleLogger::log('cpdf_logs', '14. ' . __FUNCTION__, "Setting clipping rectangle at ({$x1}, {$y1}) size {$w}x{$h}");
         $this->_pdf->clippingRectangle($x1, $this->y($y1) - $h, $w, $h);
     }
 
     public function clipping_roundrectangle($x1, $y1, $w, $h, $rTL, $rTR, $rBR, $rBL)
     {
-        SimpleLogger::log('cpdf_logs', '25. ' . __FUNCTION__, "Setting clipping rounded rectangle at ({$x1}, {$y1}) size {$w}x{$h}");
+        SimpleLogger::log('cpdf_logs', '15. ' . __FUNCTION__, "Setting clipping rounded rectangle at ({$x1}, {$y1}) size {$w}x{$h}");
         $this->_pdf->clippingRectangleRounded($x1, $this->y($y1) - $h, $w, $h, $rTL, $rTR, $rBR, $rBL);
     }
 
     public function clipping_polygon(array $points): void
     {
-        SimpleLogger::log('cpdf_logs', '26. ' . __FUNCTION__, "Setting clipping polygon with " . count($points) . " points");
+        SimpleLogger::log('cpdf_logs', '16. ' . __FUNCTION__, "Setting clipping polygon with " . count($points) . " points");
         // Adjust y values
         for ($i = 1; $i < count($points); $i += 2) {
             $points[$i] = $this->y($points[$i]);
@@ -542,55 +543,55 @@ class CPDF implements Canvas
 
     public function clipping_end()
     {
-        SimpleLogger::log('cpdf_logs', '27. ' . __FUNCTION__, "Ending clipping");
+        SimpleLogger::log('cpdf_logs', '17. ' . __FUNCTION__, "Ending clipping");
         $this->_pdf->clippingEnd();
     }
 
     public function save()
     {
-        SimpleLogger::log('cpdf_logs', '28. ' . __FUNCTION__, "Saving state");
+        SimpleLogger::log('cpdf_logs', '18. ' . __FUNCTION__, "Saving state");
         $this->_pdf->saveState();
     }
 
     public function restore()
     {
-        SimpleLogger::log('cpdf_logs', '29. ' . __FUNCTION__, "Restoring state");
+        SimpleLogger::log('cpdf_logs', '19. ' . __FUNCTION__, "Restoring state");
         $this->_pdf->restoreState();
     }
 
     public function rotate($angle, $x, $y)
     {
-        SimpleLogger::log('cpdf_logs', '30. ' . __FUNCTION__, "Rotating by {$angle} degrees at ({$x}, {$y})");
+        SimpleLogger::log('cpdf_logs', '20. ' . __FUNCTION__, "Rotating by {$angle} degrees at ({$x}, {$y})");
         $this->_pdf->rotate($angle, $x, $y);
     }
 
     public function skew($angle_x, $angle_y, $x, $y)
     {
-        SimpleLogger::log('cpdf_logs', '31. ' . __FUNCTION__, "Skewing by ({$angle_x}, {$angle_y}) at ({$x}, {$y})");
+        SimpleLogger::log('cpdf_logs', '21. ' . __FUNCTION__, "Skewing by ({$angle_x}, {$angle_y}) at ({$x}, {$y})");
         $this->_pdf->skew($angle_x, $angle_y, $x, $y);
     }
 
     public function scale($s_x, $s_y, $x, $y)
     {
-        SimpleLogger::log('cpdf_logs', '32. ' . __FUNCTION__, "Scaling by ({$s_x}, {$s_y}) at ({$x}, {$y})");
+        SimpleLogger::log('cpdf_logs', '22. ' . __FUNCTION__, "Scaling by ({$s_x}, {$s_y}) at ({$x}, {$y})");
         $this->_pdf->scale($s_x, $s_y, $x, $y);
     }
 
     public function translate($t_x, $t_y)
     {
-        SimpleLogger::log('cpdf_logs', '33. ' . __FUNCTION__, "Translating by ({$t_x}, {$t_y})");
+        SimpleLogger::log('cpdf_logs', '23. ' . __FUNCTION__, "Translating by ({$t_x}, {$t_y})");
         $this->_pdf->translate($t_x, $t_y);
     }
 
     public function transform($a, $b, $c, $d, $e, $f)
     {
-        SimpleLogger::log('cpdf_logs', '34. ' . __FUNCTION__, "Applying transformation matrix");
+        SimpleLogger::log('cpdf_logs', '24. ' . __FUNCTION__, "Applying transformation matrix");
         $this->_pdf->transform([$a, $b, $c, $d, $e, $f]);
     }
 
     public function polygon($points, $color, $width = null, $style = [], $fill = false)
     {
-        SimpleLogger::log('cpdf_logs', '22. ' . __FUNCTION__, "Drawing polygon with " . count($points) . " points, fill: " . ($fill ? 'true' : 'false'));
+        SimpleLogger::log('cpdf_logs', '11. ' . __FUNCTION__, "Drawing polygon with " . count($points) . " points, fill: " . ($fill ? 'true' : 'false'));
         $this->_set_fill_color($color);
         $this->_set_stroke_color($color);
 
@@ -611,7 +612,7 @@ class CPDF implements Canvas
 
     public function circle($x, $y, $r, $color, $width = null, $style = [], $fill = false)
     {
-        SimpleLogger::log('cpdf_logs', '23. ' . __FUNCTION__, "Drawing circle at ({$x}, {$y}) radius {$r}, fill: " . ($fill ? 'true' : 'false'));
+        SimpleLogger::log('cpdf_logs', '12. ' . __FUNCTION__, "Drawing circle at ({$x}, {$y}) radius {$r}, fill: " . ($fill ? 'true' : 'false'));
         $this->_set_fill_color($color);
         $this->_set_stroke_color($color);
 
@@ -635,6 +636,7 @@ class CPDF implements Canvas
      */
     protected function _convert_to_png($image_url, $type)
     {
+        SimpleLogger::log('cpdf_logs', '57. ' . __FUNCTION__, "Converting {$type} to PNG: {$image_url}");
         $filename = Cache::getTempImage($image_url);
 
         if ($filename !== null && file_exists($filename)) {
@@ -680,7 +682,7 @@ class CPDF implements Canvas
 
     public function image($img, $x, $y, $w, $h, $resolution = "normal")
     {
-        SimpleLogger::log('cpdf_logs', '41. ' . __FUNCTION__, "Adding image: {$img} at ({$x}, {$y}) size {$w}x{$h}");
+        SimpleLogger::log('cpdf_logs', '33. ' . __FUNCTION__, "Adding image: {$img} at ({$x}, {$y}) size {$w}x{$h}");
         [$width, $height, $type] = Helpers::dompdf_getimagesize($img, $this->get_dompdf()->getHttpContext());
 
         $debug_png = $this->_dompdf->getOptions()->getDebugPng();
@@ -729,7 +731,7 @@ class CPDF implements Canvas
 
     public function select($x, $y, $w, $h, $font, $size, $color = [0, 0, 0], $opts = [])
     {
-        SimpleLogger::log('cpdf_logs', '50. ' . __FUNCTION__, "Adding select field at ({$x}, {$y}) size {$w}x{$h}");
+        SimpleLogger::log('cpdf_logs', '58. ' . __FUNCTION__, "Adding select field at ({$x}, {$y}) size {$w}x{$h}");
         $pdf = $this->_pdf;
 
         $pdf->selectFont($font);
@@ -747,7 +749,7 @@ class CPDF implements Canvas
 
     public function textarea($x, $y, $w, $h, $font, $size, $color = [0, 0, 0])
     {
-        SimpleLogger::log('cpdf_logs', '51. ' . __FUNCTION__, "Adding textarea at ({$x}, {$y}) size {$w}x{$h}");
+        SimpleLogger::log('cpdf_logs', '59. ' . __FUNCTION__, "Adding textarea at ({$x}, {$y}) size {$w}x{$h}");
         $pdf = $this->_pdf;
 
         $pdf->selectFont($font);
@@ -764,7 +766,7 @@ class CPDF implements Canvas
 
     public function input($x, $y, $w, $h, $type, $font, $size, $color = [0, 0, 0])
     {
-        SimpleLogger::log('cpdf_logs', '52. ' . __FUNCTION__, "Adding input field type: {$type} at ({$x}, {$y}) size {$w}x{$h}");
+        SimpleLogger::log('cpdf_logs', '60. ' . __FUNCTION__, "Adding input field type: {$type} at ({$x}, {$y}) size {$w}x{$h}");
         $pdf = $this->_pdf;
 
         $pdf->selectFont($font);
@@ -794,7 +796,7 @@ class CPDF implements Canvas
 
     public function text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0)
     {
-        SimpleLogger::log('cpdf_logs', '35. ' . __FUNCTION__, "Adding text at ({$x}, {$y}): " . substr($text, 0, 50) . (strlen($text) > 50 ? '...' : ''));
+        SimpleLogger::log('cpdf_logs', '25. ' . __FUNCTION__, "Adding text at ({$x}, {$y}): " . substr($text, 0, 50) . (strlen($text) > 50 ? '...' : ''));
         $pdf = $this->_pdf;
 
         $this->_set_fill_color($color);
@@ -809,7 +811,7 @@ class CPDF implements Canvas
 
     public function javascript($code)
     {
-        SimpleLogger::log('cpdf_logs', '47. ' . __FUNCTION__, "Adding JavaScript code");
+        SimpleLogger::log('cpdf_logs', '32. ' . __FUNCTION__, "Adding JavaScript code");
         $this->_pdf->addJavascript($code);
     }
 
@@ -817,13 +819,13 @@ class CPDF implements Canvas
 
     public function add_named_dest($anchorname)
     {
-        SimpleLogger::log('cpdf_logs', '48. ' . __FUNCTION__, "Adding named destination: {$anchorname}");
+        SimpleLogger::log('cpdf_logs', '34. ' . __FUNCTION__, "Adding named destination: {$anchorname}");
         $this->_pdf->addDestination($anchorname, "Fit");
     }
 
     public function add_link($url, $x, $y, $width, $height)
     {
-        SimpleLogger::log('cpdf_logs', '49. ' . __FUNCTION__, "Adding link to: {$url} at ({$x}, {$y}) size {$width}x{$height}");
+        SimpleLogger::log('cpdf_logs', '35. ' . __FUNCTION__, "Adding link to: {$url} at ({$x}, {$y}) size {$width}x{$height}");
         $y = $this->y($y) - $height;
 
         if (strpos($url, '#') === 0) {
@@ -839,7 +841,7 @@ class CPDF implements Canvas
 
     public function font_supports_char(string $font, string $char): bool
     {
-        SimpleLogger::log('cpdf_logs', '39. ' . __FUNCTION__, "Checking font support for character in font: {$font}");
+        SimpleLogger::log('cpdf_logs', '27. ' . __FUNCTION__, "Checking font support for character in font: {$font}");
         if ($char === "") {
             return true;
         }
@@ -903,7 +905,7 @@ class CPDF implements Canvas
      */
     public function get_text_width($text, $font, $size, $word_spacing = 0.0, $char_spacing = 0.0)
     {
-        SimpleLogger::log('cpdf_logs', '36. ' . __FUNCTION__, "Getting text width for font: {$font}, size: {$size}");
+        SimpleLogger::log('cpdf_logs', '28. ' . __FUNCTION__, "Getting text width for font: {$font}, size: {$size}");
         $this->_pdf->selectFont($font, '', true, $this->_dompdf->getOptions()->getIsFontSubsettingEnabled());
         return $this->_pdf->getTextWidth($size, $text, $word_spacing, $char_spacing);
     }
@@ -913,7 +915,7 @@ class CPDF implements Canvas
      */
     public function get_font_height($font, $size)
     {
-        SimpleLogger::log('cpdf_logs', '37. ' . __FUNCTION__, "Getting font height for font: {$font}, size: {$size}");
+        SimpleLogger::log('cpdf_logs', '29. ' . __FUNCTION__, "Getting font height for font: {$font}, size: {$size}");
         $options = $this->_dompdf->getOptions();
         $this->_pdf->selectFont($font, '', true, $options->getIsFontSubsettingEnabled());
 
@@ -931,7 +933,7 @@ class CPDF implements Canvas
      */
     public function get_font_baseline($font, $size)
     {
-        SimpleLogger::log('cpdf_logs', '38. ' . __FUNCTION__, "Getting font baseline for font: {$font}, size: {$size}");
+        SimpleLogger::log('cpdf_logs', '30. ' . __FUNCTION__, "Getting font baseline for font: {$font}, size: {$size}");
         $ratio = $this->_dompdf->getOptions()->getFontHeightRatio();
         return $this->get_font_height($font, $size) / $ratio;
     }
@@ -952,7 +954,7 @@ class CPDF implements Canvas
      */
     public function page_script($callback): void
     {
-        SimpleLogger::log('cpdf_logs', '43. ' . __FUNCTION__, "Setting page script");
+        SimpleLogger::log('cpdf_logs', '31. ' . __FUNCTION__, "Setting page script");
         if (is_string($callback)) {
             $this->processPageScript(function (
                 int $PAGE_NUM,
@@ -970,7 +972,7 @@ class CPDF implements Canvas
 
     public function page_text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0)
     {
-        SimpleLogger::log('cpdf_logs', '44. ' . __FUNCTION__, "Setting page text at ({$x}, {$y})");
+        SimpleLogger::log('cpdf_logs', '26. ' . __FUNCTION__, "Setting page text at ({$x}, {$y})");
         $this->processPageScript(function (int $pageNumber, int $pageCount) use ($x, $y, $text, $font, $size, $color, $word_space, $char_space, $angle) {
             $text = str_replace(
                 ["{PAGE_NUM}", "{PAGE_COUNT}"],
@@ -983,7 +985,7 @@ class CPDF implements Canvas
 
     public function page_line($x1, $y1, $x2, $y2, $color, $width, $style = [])
     {
-        SimpleLogger::log('cpdf_logs', '45. ' . __FUNCTION__, "Setting page line from ({$x1}, {$y1}) to ({$x2}, {$y2})");
+        SimpleLogger::log('cpdf_logs', '13. ' . __FUNCTION__, "Setting page line from ({$x1}, {$y1}) to ({$x2}, {$y2})");
         $this->processPageScript(function () use ($x1, $y1, $x2, $y2, $color, $width, $style) {
             $this->line($x1, $y1, $x2, $y2, $color, $width, $style);
         });
@@ -994,7 +996,7 @@ class CPDF implements Canvas
      */
     public function new_page()
     {
-        SimpleLogger::log('cpdf_logs', '9. ' . __FUNCTION__, "Creating new page");
+        SimpleLogger::log('cpdf_logs', '6. ' . __FUNCTION__, "Creating new page");
         $this->_page_number++;
         $this->_page_count++;
 
@@ -1005,6 +1007,7 @@ class CPDF implements Canvas
 
     protected function processPageScript(callable $callback): void
     {
+        SimpleLogger::log('cpdf_logs', '61. ' . __FUNCTION__, "Processing page script callback");
         $pageNumber = 1;
 
         foreach ($this->_pages as $pid) {
@@ -1020,7 +1023,7 @@ class CPDF implements Canvas
 
     public function stream($filename = "document.pdf", $options = [])
     {
-        SimpleLogger::log('cpdf_logs', '62. ' . __FUNCTION__, "Streaming PDF: {$filename}");
+        SimpleLogger::log('cpdf_logs', '41. ' . __FUNCTION__, "Streaming PDF: {$filename}");
         if (headers_sent()) {
             die("Unable to stream pdf: headers already sent");
         }
@@ -1045,7 +1048,7 @@ class CPDF implements Canvas
 
     public function output($options = [])
     {
-        SimpleLogger::log('cpdf_logs', '63. ' . __FUNCTION__, "Generating PDF output");
+        SimpleLogger::log('cpdf_logs', '42. ' . __FUNCTION__, "Generating PDF output");
         if (!isset($options["compress"])) $options["compress"] = true;
 
         $debug = !$options['compress'];
@@ -1060,7 +1063,7 @@ class CPDF implements Canvas
      */
     public function get_messages()
     {
-        SimpleLogger::log('cpdf_logs', '67. ' . __FUNCTION__, "Getting CPDF messages");
+        SimpleLogger::log('cpdf_logs', '62. ' . __FUNCTION__, "Getting CPDF messages");
         return $this->_pdf->messages;
     }
 }
