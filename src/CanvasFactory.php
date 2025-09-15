@@ -33,6 +33,7 @@ class CanvasFactory
      */
     static function get_instance(Dompdf $dompdf, $paper, string $orientation, ?string $class = null)
     {
+        SimpleLogger::log("canvas_factory_logs", __FUNCTION__, "Creating canvas instance with backend: " . $dompdf->getOptions()->getPdfBackend());
         $backend = strtolower($dompdf->getOptions()->getPdfBackend());
 
         if (isset($class) && class_exists($class, false)) {
@@ -67,6 +68,7 @@ class CanvasFactory
             $instance = new $class($paper, $orientation, $dompdf);
         }
 
+        SimpleLogger::log("canvas_factory_logs", __FUNCTION__, "Created canvas instance of class: $class");
         return $instance;
     }
 }

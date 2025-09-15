@@ -16,6 +16,7 @@ use Dompdf\Image\Cache;
 use Dompdf\Css\Stylesheet;
 use Dompdf\Helpers;
 use Masterminds\HTML5;
+use Dompdf\SimpleLogger;
 
 /**
  * Dompdf - PHP5 HTML to PDF renderer
@@ -258,6 +259,13 @@ class Dompdf
             $this->setOptions(new Options());
         }
 
+                        // Initialize logging channels based on *_logs options
+        foreach ($this->options->getLoggerOptions() as $key => $value) {
+            if (substr($key, -5) === '_logs' && $value) {
+                SimpleLogger::enableChannel($key);
+            }
+        }
+
         $versionFile = realpath(__DIR__ . '/../VERSION');
         if (($version = file_get_contents($versionFile)) !== false) {
             $version = trim($version);
@@ -267,13 +275,6 @@ class Dompdf
         }
 
         $this->setPhpConfig();
-
-        // Initialize logging channels based on *_logs options
-        foreach ($this->options->getLoggerOptions() as $key => $value) {
-            if (substr($key, -5) === '_logs' && $value) {
-                SimpleLogger::enableChannel($key);
-            }
-        }
 
         $this->paperSize = $this->options->getDefaultPaperSize();
         $this->paperOrientation = $this->options->getDefaultPaperOrientation();
