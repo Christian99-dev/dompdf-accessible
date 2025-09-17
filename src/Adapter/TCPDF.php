@@ -108,12 +108,19 @@ class TCPDF implements Canvas
     protected $_height;
 
     /**
+     * Will be set, if setPageCount() is called, and will override the actual page count
+     *
+     * @var int
+     */
+    protected $_page_count = null;
+
+    /**
      * @var array
      */
     protected $_page_texts = [];
 
     /**
-     * @param string|float[] $paper       The paper size to use as either a standard paper size (see {@link Dompdf\Adapter\CPDF::$PAPER_SIZES})
+     * @param string|float[] $paper       The paper size to use as either a standard paper size (see {@link Dompdf\Adapter\TCPDF::$PAPER_SIZES})
      *                                    or an array of the form `[x1, y1, x2, y2]` (typically `[0, 0, width, height]`).
      * @param string         $orientation The paper orientation, either `portrait` or `landscape`.
      * @param Dompdf|null    $dompdf      The Dompdf instance.
@@ -139,8 +146,8 @@ class TCPDF implements Canvas
         }
 
         // Convert to TCPDF format - TCPDF uses width and height in mm
-        $width_mm = ($size[2] - $size[0]) * 0.352778; // Convert points to mm
-        $height_mm = ($size[3] - $size[1]) * 0.352778; // Convert points to mm
+        // $width_mm = ($size[2] - $size[0]) * 0.352778; // Convert points to mm
+        // $height_mm = ($size[3] - $size[1]) * 0.352778; // Convert points to mm
 
         // Initialize TCPDF
         $tcpdf_orientation = strtolower($orientation) === "landscape" ? 'L' : 'P';
@@ -169,60 +176,10 @@ class TCPDF implements Canvas
     }
 
     /**
-     * Maps dompdf font names to TCPDF font names
-     *
-     * @param string $font
-     * @return string
-     */
-    protected function _mapFontToTCPDF($font) {
-        // Basic font mapping - this can be expanded as needed
-        $font_map = [
-            'helvetica' => 'helvetica',
-            'times' => 'times',
-            'courier' => 'courier',
-            'symbol' => 'symbol',
-            'zapfdingbats' => 'zapfdingbats',
-        ];
-        
-        // Extract base font name (remove path and extension)
-        $base_font = basename($font, '.ttf');
-        $base_font = basename($base_font, '.otf');
-        $base_font = strtolower($base_font);
-        
-        // Return mapped font or default to helvetica
-        return $font_map[$base_font] ?? 'helvetica';
-    }
-
-    /**
-     * Applies page text with placeholder replacement
-     *
-     * @param string $text
-     * @param float  $x
-     * @param float  $y
-     * @param string $font
-     * @param float  $size
-     * @param array  $color
-     * @param float  $word_space
-     * @param float  $char_space
-     * @param float  $angle
-     */
-    protected function _applyPageText($text, $x, $y, $font, $size, $color, $word_space, $char_space, $angle) {
-        // Replace placeholders
-        $page_num = $this->_pdf->getPage();
-        $page_count = $this->_pdf->getNumPages();
-        
-        $processed_text = str_replace(['{PAGE_NUM}', '{PAGE_COUNT}'], [$page_num, $page_count], $text);
-        
-        // Use the regular text method to render
-        $this->text($x, $y, $processed_text, $font, $size, $color, $word_space, $char_space, $angle);
-    }
-
-    /**
      * @return Dompdf
      */
     function get_dompdf() {
-        SimpleLogger::log('tcpdf_logs', '2. ' . __FUNCTION__, "Returning dompdf instance");
-        return $this->_dompdf;
+        SimpleLogger::log('tcpdf_logs', '2. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -231,7 +188,7 @@ class TCPDF implements Canvas
      * @return int
      */
     function get_page_number() {
-        SimpleLogger::log('tcpdf_logs', '3. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '3. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -240,7 +197,7 @@ class TCPDF implements Canvas
      * @return int
      */
     function get_page_count() {
-        SimpleLogger::log('tcpdf_logs', '4. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '4. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -249,7 +206,7 @@ class TCPDF implements Canvas
      * @param int $count
      */
     function set_page_count($count) {
-        SimpleLogger::log('tcpdf_logs', '5. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '5. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -269,7 +226,7 @@ class TCPDF implements Canvas
      * @param string $cap   `butt`, `round`, or `square`
      */
     function line($x1, $y1, $x2, $y2, $color, $width, $style = [], $cap = "butt") {
-        SimpleLogger::log('tcpdf_logs', '7. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '7. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -291,7 +248,7 @@ class TCPDF implements Canvas
      * @param string $cap   `butt`, `round`, or `square`
      */
     function arc($x, $y, $r1, $r2, $astart, $aend, $color, $width, $style = [], $cap = "butt") {
-        SimpleLogger::log('tcpdf_logs', '8. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '8. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -311,7 +268,7 @@ class TCPDF implements Canvas
      * @param string $cap   `butt`, `round`, or `square`
      */
     function rectangle($x1, $y1, $w, $h, $color, $width, $style = [], $cap = "butt") {
-        SimpleLogger::log('tcpdf_logs', '9. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '9. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -325,7 +282,7 @@ class TCPDF implements Canvas
      *                     where r, g, b, and alpha are float values between 0 and 1
      */
     function filled_rectangle($x1, $y1, $w, $h, $color) {
-        SimpleLogger::log('tcpdf_logs', '10. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '10. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -337,7 +294,7 @@ class TCPDF implements Canvas
      * @param float $h
      */
     function clipping_rectangle($x1, $y1, $w, $h) {
-        SimpleLogger::log('tcpdf_logs', '14. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '14. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -353,7 +310,7 @@ class TCPDF implements Canvas
      * @param float $bl
      */
     function clipping_roundrectangle($x1, $y1, $w, $h, $tl, $tr, $br, $bl) {
-        SimpleLogger::log('tcpdf_logs', '15. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '15. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -362,14 +319,14 @@ class TCPDF implements Canvas
      * @param float[] $points
      */
     public function clipping_polygon(array $points): void {
-        SimpleLogger::log('tcpdf_logs', '16. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '16. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
      * Ends the last clipping shape
      */
     function clipping_end() {
-        SimpleLogger::log('tcpdf_logs', '17. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '17. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -385,7 +342,7 @@ class TCPDF implements Canvas
      * @param callable $callback The callback function to process on every page
      */
     public function page_script($callback): void {
-        SimpleLogger::log('tcpdf_logs', '31. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '31. ' . __FUNCTION__, "setting page_script callback" . json_encode($callback));
     }
 
     /**
@@ -406,31 +363,7 @@ class TCPDF implements Canvas
      * @param float  $angle      Angle to write the text at, measured clockwise starting from the x-axis
      */
     public function page_text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0) {
-        SimpleLogger::log('tcpdf_logs', '26. ' . __FUNCTION__, "Setting up page text: '{$text}' at ({$x}, {$y})");
-        
-        // Store page text configuration for later use
-        if (!isset($this->_page_texts)) {
-            $this->_page_texts = [];
-        }
-        
-        $this->_page_texts[] = [
-            'x' => $x,
-            'y' => $y,
-            'text' => $text,
-            'font' => $font,
-            'size' => $size,
-            'color' => $color,
-            'word_space' => $word_space,
-            'char_space' => $char_space,
-            'angle' => $angle
-        ];
-        
-        // For TCPDF, we need to set up a header/footer or use the page script functionality
-        // This is a simplified implementation - in practice, you might want to use TCPDF's
-        // header/footer callbacks for better integration
-        
-        // Apply page text to current page immediately
-        $this->_applyPageText($text, $x, $y, $font, $size, $color, $word_space, $char_space, $angle);
+        SimpleLogger::log('tcpdf_logs', '26. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -446,21 +379,21 @@ class TCPDF implements Canvas
      * @param array $style
      */
     public function page_line($x1, $y1, $x2, $y2, $color, $width, $style = []) {
-        SimpleLogger::log('tcpdf_logs', '13. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '13. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
      * Save current state
      */
     function save() {
-        SimpleLogger::log('tcpdf_logs', '18. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '18. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
      * Restore last state
      */
     function restore() {
-        SimpleLogger::log('tcpdf_logs', '19. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '19. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -471,7 +404,7 @@ class TCPDF implements Canvas
      * @param float $y     Origin ordinate
      */
     function rotate($angle, $x, $y) {
-        SimpleLogger::log('tcpdf_logs', '20. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '20. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -483,7 +416,7 @@ class TCPDF implements Canvas
      * @param float $y       Origin ordinate
      */
     function skew($angle_x, $angle_y, $x, $y) {
-        SimpleLogger::log('tcpdf_logs', '21. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '21. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -495,7 +428,7 @@ class TCPDF implements Canvas
      * @param float $y   Origin ordinate
      */
     function scale($s_x, $s_y, $x, $y) {
-        SimpleLogger::log('tcpdf_logs', '22. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '22. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -505,7 +438,7 @@ class TCPDF implements Canvas
      * @param float $t_y movement to the bottom
      */
     function translate($t_x, $t_y) {
-        SimpleLogger::log('tcpdf_logs', '23. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '23. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -519,7 +452,7 @@ class TCPDF implements Canvas
      * @param float $f
      */
     function transform($a, $b, $c, $d, $e, $f) {
-        SimpleLogger::log('tcpdf_logs', '24. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '24. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -547,7 +480,7 @@ class TCPDF implements Canvas
      * @param bool  $fill   Fills the polygon if true
      */
     function polygon($points, $color, $width = null, $style = [], $fill = false) {
-        SimpleLogger::log('tcpdf_logs', '11. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '11. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -566,7 +499,7 @@ class TCPDF implements Canvas
      * @param bool  $fill  Fills the circle if true
      */
     function circle($x, $y, $r, $color, $width = null, $style = [], $fill = false) {
-        SimpleLogger::log('tcpdf_logs', '12. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '12. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -583,7 +516,7 @@ class TCPDF implements Canvas
      * @param string $resolution The resolution of the image
      */
     function image($img, $x, $y, $w, $h, $resolution = "normal") {
-        SimpleLogger::log('tcpdf_logs', '33. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '33. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -601,48 +534,7 @@ class TCPDF implements Canvas
      * @param float  $angle       Angle to write the text at, measured clockwise starting from the x-axis
      */
     function text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0) {
-        SimpleLogger::log('tcpdf_logs', '25. ' . __FUNCTION__, "Writing text: '{$text}' at ({$x}, {$y}) with size {$size}");
-        
-        // Convert color from 0-1 range to 0-255 range for TCPDF
-        $r = isset($color[0]) ? (int)($color[0] * 255) : 0;
-        $g = isset($color[1]) ? (int)($color[1] * 255) : 0;
-        $b = isset($color[2]) ? (int)($color[2] * 255) : 0;
-        
-        // Set text color
-        $this->_pdf->SetTextColor($r, $g, $b);
-        
-        // Set font - use a default font if $font is not a recognized TCPDF font
-        // For now, we'll use helvetica as default, but this could be improved
-        // to map font files to TCPDF font names
-        $tcpdf_font = $this->_mapFontToTCPDF($font);
-        $this->_pdf->SetFont($tcpdf_font, '', $size);
-        
-        // Apply character and word spacing if specified
-        if ($char_space != 0.0) {
-            // TCPDF doesn't have direct character spacing, we can simulate with tracking
-            // This is an approximation
-        }
-        
-        // Save current transformation matrix if we need to rotate
-        if ($angle != 0.0) {
-            $this->_pdf->StartTransform();
-            // TCPDF expects angle in degrees, convert from radians if needed
-            // Assuming angle is already in degrees as per documentation
-            $this->_pdf->Rotate($angle, $x, $y);
-        }
-        
-        // Convert coordinates - TCPDF uses different coordinate system
-        // TCPDF's origin is top-left, dompdf uses bottom-left
-        $tcpdf_y = $this->_height - $y;
-        
-        // Write the text
-        $this->_pdf->SetXY($x, $tcpdf_y);
-        $this->_pdf->Cell(0, 0, $text, 0, 0, 'L', false, '', 0, false, 'T', 'T');
-        
-        // Restore transformation matrix if we rotated
-        if ($angle != 0.0) {
-            $this->_pdf->StopTransform();
-        }
+        SimpleLogger::log('tcpdf_logs', '25. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -651,7 +543,7 @@ class TCPDF implements Canvas
      * @param string $anchorname The name of the named destination
      */
     function add_named_dest($anchorname) {
-        SimpleLogger::log('tcpdf_logs', '34. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '34. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -664,7 +556,7 @@ class TCPDF implements Canvas
      * @param float  $height The height of the link
      */
     function add_link($url, $x, $y, $width, $height) {
-        SimpleLogger::log('tcpdf_logs', '35. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '35. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -674,7 +566,7 @@ class TCPDF implements Canvas
      * @param string $value The text to set
      */
     public function add_info(string $label, string $value): void {
-        SimpleLogger::log('tcpdf_logs', '36. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '36. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -685,32 +577,9 @@ class TCPDF implements Canvas
      *
      * @return bool
      */
-    function font_supports_char(string $font, string $char): bool {        
-        SimpleLogger::log('tcpdf_logs', '27. ' . __FUNCTION__, "Checking font '{$font}' for character '{$char}'");
-        
-        // Map font to TCPDF font name
-        $tcpdf_font = $this->_mapFontToTCPDF($font);
-        
-        try {
-            // Try to set the font
-            $this->_pdf->SetFont($tcpdf_font, '', 12);
-            
-            // TCPDF doesn't have a direct method to check character support
-            // We can try to get the character width - if it returns 0 or fails, 
-            // the character might not be supported
-            $width = $this->_pdf->GetStringWidth($char);
-            
-            // If width is 0, the character might not be supported
-            // However, this is not foolproof as some valid characters might have 0 width
-            // For a more robust implementation, you might need to check the font's character map
-            
-            return $width >= 0; // Return true if we can measure the character
-            
-        } catch (\Exception $e) {
-            // If setting the font or measuring fails, assume character is not supported
-            SimpleLogger::log('tcpdf_logs', '27. ' . __FUNCTION__, "Font check failed: " . $e->getMessage());
-            return false;
-        }
+    function font_supports_char(string $font, string $char): bool {
+        SimpleLogger::log('tcpdf_logs', '27. ' . __FUNCTION__, "Not Implemented");
+        return true;
     }
 
     /**
@@ -725,46 +594,7 @@ class TCPDF implements Canvas
      * @return float
      */
     function get_text_width($text, $font, $size, $word_spacing = 0.0, $char_spacing = 0.0) {
-        SimpleLogger::log('tcpdf_logs', '28. ' . __FUNCTION__, "Calculating text width for: '{$text}' with font '{$font}' size {$size}");
-        
-        // Map font to TCPDF font name
-        $tcpdf_font = $this->_mapFontToTCPDF($font);
-        
-        try {
-            // Save current font settings
-            $current_font = $this->_pdf->getFontFamily();
-            $current_style = $this->_pdf->getFontStyle();
-            $current_size = $this->_pdf->getFontSizePt();
-            
-            // Set the font for measurement
-            $this->_pdf->SetFont($tcpdf_font, '', $size);
-            
-            // Get base text width
-            $width = $this->_pdf->GetStringWidth($text);
-            
-            // Add word spacing - count spaces in text
-            if ($word_spacing != 0.0) {
-                $space_count = substr_count($text, ' ');
-                $width += $space_count * $word_spacing;
-            }
-            
-            // Add character spacing - count characters minus one (no spacing after last char)
-            if ($char_spacing != 0.0) {
-                $char_count = mb_strlen($text, 'UTF-8') - 1; // -1 because no spacing after last character
-                if ($char_count > 0) {
-                    $width += $char_count * $char_spacing;
-                }
-            }
-            
-            // Restore previous font settings
-            $this->_pdf->SetFont($current_font, $current_style, $current_size);
-            
-            return $width;
-            
-        } catch (\Exception $e) {
-            SimpleLogger::log('tcpdf_logs', '28. ' . __FUNCTION__, "Error calculating text width: " . $e->getMessage());
-            return 0.0;
-        }
+        SimpleLogger::log('tcpdf_logs', '28. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -776,41 +606,19 @@ class TCPDF implements Canvas
      * @return float
      */
     function get_font_height($font, $size) {
-        SimpleLogger::log('tcpdf_logs', '29. ' . __FUNCTION__, "Calculating font height for font '{$font}' size {$size}");
-        
-        // Map font to TCPDF font name
-        $tcpdf_font = $this->_mapFontToTCPDF($font);
-        
-        try {
-            // Save current font settings
-            $current_font = $this->_pdf->getFontFamily();
-            $current_style = $this->_pdf->getFontStyle();
-            $current_size = $this->_pdf->getFontSizePt();
-            
-            // Set the font for measurement
-            $this->_pdf->SetFont($tcpdf_font, '', $size);
-            
-            // Get font height - for most practical purposes, the font size is a good approximation
-            // TCPDF doesn't provide direct access to detailed font metrics in a simple way
-            $height = $size;
-            
-            // We can try to get the cell height which TCPDF calculates based on font metrics
-            $cell_height = $this->_pdf->getCellHeight($size);
-            if ($cell_height > 0) {
-                $height = $cell_height;
-            }
-            
-            // Restore previous font settings
-            $this->_pdf->SetFont($current_font, $current_style, $current_size);
-            
-            return $height;
-            
-        } catch (\Exception $e) {
-            SimpleLogger::log('tcpdf_logs', '29. ' . __FUNCTION__, "Error calculating font height: " . $e->getMessage());
-            // Fallback to font size as approximation
-            return $size;
-        }
+        SimpleLogger::log('tcpdf_logs', '29. ' . __FUNCTION__, "Not Implemented");
+        return 0.0;
     }
+
+    /**
+     * Returns the font x-height, in points
+     *
+     * @param string $font The font file to use
+     * @param float  $size The font size, in points
+     *
+     * @return float
+     */
+    //function get_font_x_height($font, $size);
 
     /**
      * Calculates font baseline, in points
@@ -821,41 +629,7 @@ class TCPDF implements Canvas
      * @return float
      */
     function get_font_baseline($font, $size) {
-        SimpleLogger::log('tcpdf_logs', '30. ' . __FUNCTION__, "Calculating font baseline for font '{$font}' size {$size}");
-        
-        // Map font to TCPDF font name
-        $tcpdf_font = $this->_mapFontToTCPDF($font);
-        
-        try {
-            // Save current font settings
-            $current_font = $this->_pdf->getFontFamily();
-            $current_style = $this->_pdf->getFontStyle();
-            $current_size = $this->_pdf->getFontSizePt();
-            
-            // Set the font for measurement
-            $this->_pdf->SetFont($tcpdf_font, '', $size);
-            
-            // Calculate baseline - this is typically about 75-80% of the font height from the top
-            // For most fonts, the baseline is approximately 0.8 * font_size from the top
-            $baseline = $size * 0.8;
-            
-            // Alternative approach: try to calculate based on font metrics if available
-            // The baseline is the distance from the top of the font to the baseline
-            $font_height = $this->get_font_height($font, $size);
-            
-            // Typical ratio for baseline position (this varies by font but 0.8 is a good average)
-            $baseline = $font_height * 0.8;
-            
-            // Restore previous font settings
-            $this->_pdf->SetFont($current_font, $current_style, $current_size);
-            
-            return $baseline;
-            
-        } catch (\Exception $e) {
-            SimpleLogger::log('tcpdf_logs', '30. ' . __FUNCTION__, "Error calculating font baseline: " . $e->getMessage());
-            // Fallback calculation
-            return $size * 0.8;
-        }
+        SimpleLogger::log('tcpdf_logs', '30. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -864,7 +638,7 @@ class TCPDF implements Canvas
      * @return float
      */
     function get_width() {
-        SimpleLogger::log('tcpdf_logs', '38. ' . __FUNCTION__, "Returning width: {$this->_width}");
+        SimpleLogger::log('tcpdf_logs', '38. ' . __FUNCTION__, "Get Width: " . $this->_width);
         return $this->_width;
     }
 
@@ -874,7 +648,7 @@ class TCPDF implements Canvas
      * @return float
      */
     function get_height() {
-        SimpleLogger::log('tcpdf_logs', '39. ' . __FUNCTION__, "Returning height: {$this->_height}");
+        SimpleLogger::log('tcpdf_logs', '39. ' . __FUNCTION__, "Get Height: " . $this->_height);
         return $this->_height;
     }
 
@@ -885,7 +659,7 @@ class TCPDF implements Canvas
      * @param string $mode
      */
     public function set_opacity(float $opacity, string $mode = "Normal"): void {
-        SimpleLogger::log('tcpdf_logs', '40. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '40. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -903,14 +677,14 @@ class TCPDF implements Canvas
      * @param array $options
      */
     function set_default_view($view, $options = []) {
-        SimpleLogger::log('tcpdf_logs', '37. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '37. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
      * @param string $code
      */
     function javascript($code) {
-        SimpleLogger::log('tcpdf_logs', '32. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '32. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -919,7 +693,7 @@ class TCPDF implements Canvas
      * Subsequent drawing operations will appear on the new page.
      */
     function new_page() {
-        SimpleLogger::log('tcpdf_logs', '6. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '6. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
@@ -929,7 +703,7 @@ class TCPDF implements Canvas
      * @param array  $options  Associative array: 'compress' => 1 or 0 (default 1); 'Attachment' => 1 or 0 (default 1).
      */
     function stream($filename, $options = []) {
-        SimpleLogger::log('tcpdf_logs', '41. ' . __FUNCTION__, "Not Implemented yet.");
+        SimpleLogger::log('tcpdf_logs', '41. ' . __FUNCTION__, "Not Implemented");
     }
 
     /**
