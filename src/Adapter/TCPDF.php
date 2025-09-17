@@ -120,6 +120,11 @@ class TCPDF implements Canvas
     protected $_page_texts = [];
 
     /**
+     * @var float
+     */
+    protected $_current_opacity = 1.0;
+
+    /**
      * @param string|float[] $paper       The paper size to use as either a standard paper size (see {@link Dompdf\Adapter\TCPDF::$PAPER_SIZES})
      *                                    or an array of the form `[x1, y1, x2, y2]` (typically `[0, 0, width, height]`).
      * @param string         $orientation The paper orientation, either `portrait` or `landscape`.
@@ -534,7 +539,73 @@ class TCPDF implements Canvas
      * @param float  $angle       Angle to write the text at, measured clockwise starting from the x-axis
      */
     function text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0) {
-        SimpleLogger::log('tcpdf_logs', '25. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '25. ' . __FUNCTION__, "Adding text at ({$x}, {$y}): " . substr($text, 0, 50) . (strlen($text) > 50 ? '...' : ''));
+        
+        // Convert color values from 0-1 range to 0-255 range for TCPDF
+        $r = (int)($color[0] * 255);
+        $g = (int)($color[1] * 255);
+        $b = (int)($color[2] * 255);
+        
+        // Set text color
+        $this->_pdf->SetTextColor($r, $g, $b);
+        
+        // Set font - for now using default fonts, could be enhanced to handle custom fonts
+        $fontFamily = $this->_mapFontFamily($font);
+        $this->_pdf->SetFont($fontFamily, '', $size);
+        
+        // Apply character and word spacing if supported by TCPDF
+        if ($char_space != 0.0) {
+            $this->_pdf->setFontSpacing($char_space);
+        }
+        
+        // Position and add text
+        if ($angle != 0.0) {
+            // For rotated text, we need to use transformation matrix
+            $this->_pdf->StartTransform();
+            $this->_pdf->Rotate($angle, $x, $y);
+            $this->_pdf->Text($x, $y, $text);
+            $this->_pdf->StopTransform();
+        } else {
+            $this->_pdf->Text($x, $y, $text);
+        }
+        
+        // Reset font spacing if it was changed
+        if ($char_space != 0.0) {
+            $this->_pdf->setFontSpacing(0);
+        }
+    }
+    
+    /**
+     * Maps font names to TCPDF font families
+     * 
+     * @param string $font Font name/path
+     * @return string TCPDF font family name
+     */
+    private function _mapFontFamily($font) {
+        SimpleLogger::log('tcpdf_logs', '64. ' . __FUNCTION__, "Mapping font family for font: {$font}");
+
+        // Extract font family name from path or full name
+        $fontName = strtolower(basename($font, '.ttf'));
+        
+        // Map common fonts to TCPDF equivalents
+        $fontMap = [
+            'helvetica' => 'helvetica',
+            'arial' => 'helvetica',
+            'times' => 'times',
+            'courier' => 'courier',
+            'symbol' => 'symbol',
+            'zapfdingbats' => 'zapfdingbats'
+        ];
+        
+        // Check if it's a standard font
+        foreach ($fontMap as $pattern => $tcpdfFont) {
+            if (strpos($fontName, $pattern) !== false) {
+                return $tcpdfFont;
+            }
+        }
+        
+        // Default to helvetica for unknown fonts
+        return 'helvetica';
     }
 
     /**
@@ -566,7 +637,33 @@ class TCPDF implements Canvas
      * @param string $value The text to set
      */
     public function add_info(string $label, string $value): void {
-        SimpleLogger::log('tcpdf_logs', '36. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '36. ' . __FUNCTION__, "Adding info: {$label} = {$value}");
+        
+        // Map common metadata labels to TCPDF methods
+        switch (strtolower($label)) {
+            case 'title':
+                $this->_pdf->SetTitle($value);
+                break;
+            case 'author':
+                $this->_pdf->SetAuthor($value);
+                break;
+            case 'subject':
+                $this->_pdf->SetSubject($value);
+                break;
+            case 'keywords':
+                $this->_pdf->SetKeywords($value);
+                break;
+            case 'creator':
+                $this->_pdf->SetCreator($value);
+                break;
+            default:
+                // For other metadata, we could use custom properties if TCPDF supports them
+                // or just store them in a way that's accessible
+                // TCPDF doesn't have a direct equivalent to CPDF's addInfo for arbitrary keys
+                // So we'll just log it for now
+                SimpleLogger::log('tcpdf_logs', '36. ' . __FUNCTION__, "Custom metadata not directly supported: {$label} = {$value}");
+                break;
+        }
     }
 
     /**
@@ -578,8 +675,48 @@ class TCPDF implements Canvas
      * @return bool
      */
     function font_supports_char(string $font, string $char): bool {
-        SimpleLogger::log('tcpdf_logs', '27. ' . __FUNCTION__, "Not Implemented");
-        return true;
+        SimpleLogger::log('tcpdf_logs', '27. ' . __FUNCTION__, "Checking font support for character in font: {$font}");
+        
+        if ($char === "") {
+            return true;
+        }
+        
+        // Map font to TCPDF font family
+        $fontFamily = $this->_mapFontFamily($font);
+        
+        // Set the font temporarily to check support
+        $currentFont = $this->_pdf->getFontFamily();
+        $currentSize = $this->_pdf->getFontSizePt();
+        
+        try {
+            // Try to set the font - if it fails, font doesn't exist
+            $this->_pdf->SetFont($fontFamily, '', 12);
+            
+            // For standard fonts, TCPDF generally supports most common characters
+            // More sophisticated checking could be implemented here if needed
+            $charCode = ord($char);
+            
+            // Basic ASCII characters are always supported
+            if ($charCode >= 32 && $charCode <= 126) {
+                return true;
+            }
+            
+            // Extended ASCII and Unicode support depends on the font
+            // For now, we'll assume most characters are supported by standard fonts
+            // This could be enhanced with more sophisticated font checking
+            return true;
+            
+        } catch (\Exception $e) {
+            return false;
+        } finally {
+            // Restore original font settings
+            try {
+                $this->_pdf->SetFont($currentFont, '', $currentSize);
+            } catch (\Exception $e) {
+                // If we can't restore, at least try to set a default font
+                $this->_pdf->SetFont('helvetica', '', 12);
+            }
+        }
     }
 
     /**
@@ -594,7 +731,48 @@ class TCPDF implements Canvas
      * @return float
      */
     function get_text_width($text, $font, $size, $word_spacing = 0.0, $char_spacing = 0.0) {
-        SimpleLogger::log('tcpdf_logs', '28. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '28. ' . __FUNCTION__, "Getting text width for font: {$font}, size: {$size}");
+        
+        // Map font to TCPDF font family
+        $fontFamily = $this->_mapFontFamily($font);
+        
+        // Store current font settings to restore later
+        $currentFont = $this->_pdf->getFontFamily();
+        $currentSize = $this->_pdf->getFontSizePt();
+        
+        try {
+            // Set the font for measurement
+            $this->_pdf->SetFont($fontFamily, '', $size);
+            
+            // Get the string width from TCPDF
+            $width = $this->_pdf->GetStringWidth($text);
+            
+            // Add word spacing - count spaces in text and multiply by word_spacing
+            if ($word_spacing != 0.0) {
+                $spaceCount = substr_count($text, ' ');
+                $width += $spaceCount * $word_spacing;
+            }
+            
+            // Add character spacing - multiply by character count
+            if ($char_spacing != 0.0) {
+                $charCount = mb_strlen($text, 'UTF-8');
+                $width += $charCount * $char_spacing;
+            }
+            
+            return $width;
+            
+        } catch (\Exception $e) {
+            // If there's an error, return a reasonable fallback
+            return strlen($text) * $size * 0.6; // Rough approximation
+        } finally {
+            // Restore original font settings
+            try {
+                $this->_pdf->SetFont($currentFont, '', $currentSize);
+            } catch (\Exception $e) {
+                // If we can't restore, at least try to set a default font
+                $this->_pdf->SetFont('helvetica', '', 12);
+            }
+        }
     }
 
     /**
@@ -606,8 +784,40 @@ class TCPDF implements Canvas
      * @return float
      */
     function get_font_height($font, $size) {
-        SimpleLogger::log('tcpdf_logs', '29. ' . __FUNCTION__, "Not Implemented");
-        return 0.0;
+        SimpleLogger::log('tcpdf_logs', '29. ' . __FUNCTION__, "Getting font height for font: {$font}, size: {$size}");
+        
+        // Map font to TCPDF font family
+        $fontFamily = $this->_mapFontFamily($font);
+        
+        // Store current font settings to restore later
+        $currentFont = $this->_pdf->getFontFamily();
+        $currentSize = $this->_pdf->getFontSizePt();
+        
+        try {
+            // Set the font for measurement
+            $this->_pdf->SetFont($fontFamily, '', $size);
+            
+            // Get font height from TCPDF - this includes ascender + descender
+            $fontHeight = $this->_pdf->getFontSize();
+            
+            // Apply font height ratio similar to CPDF implementation
+            // Default ratio is usually around 1.2 for line spacing
+            $ratio = $this->_dompdf->getOptions()->getFontHeightRatio();
+            
+            return $fontHeight * $ratio;
+            
+        } catch (\Exception $e) {
+            // If there's an error, return a reasonable fallback based on font size
+            return $size * 1.2; // Standard line height multiplier
+        } finally {
+            // Restore original font settings
+            try {
+                $this->_pdf->SetFont($currentFont, '', $currentSize);
+            } catch (\Exception $e) {
+                // If we can't restore, at least try to set a default font
+                $this->_pdf->SetFont('helvetica', '', 12);
+            }
+        }
     }
 
     /**
@@ -629,7 +839,15 @@ class TCPDF implements Canvas
      * @return float
      */
     function get_font_baseline($font, $size) {
-        SimpleLogger::log('tcpdf_logs', '30. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '30. ' . __FUNCTION__, "Getting font baseline for font: {$font}, size: {$size}");
+        
+        // Get font height without the ratio applied - this matches CPDF behavior
+        // The baseline is the distance from the top of the line to where characters sit
+        $ratio = $this->_dompdf->getOptions()->getFontHeightRatio();
+        $fontHeight = $this->get_font_height($font, $size);
+        
+        // Return font height without the ratio, which represents the baseline distance
+        return $fontHeight / $ratio;
     }
 
     /**
@@ -659,7 +877,17 @@ class TCPDF implements Canvas
      * @param string $mode
      */
     public function set_opacity(float $opacity, string $mode = "Normal"): void {
-        SimpleLogger::log('tcpdf_logs', '40. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '40. ' . __FUNCTION__, "Setting opacity: {$opacity} mode: {$mode}");
+        
+        // Clamp opacity to valid range (0.0 to 1.0)
+        $opacity = max(0.0, min(1.0, $opacity));
+        
+        // TCPDF uses SetAlpha method for transparency
+        // The first parameter is for fill opacity, second for stroke opacity
+        $this->_pdf->SetAlpha($opacity, $opacity);
+        
+        // Store current opacity for potential future use
+        $this->_current_opacity = $opacity;
     }
 
     /**
@@ -694,6 +922,7 @@ class TCPDF implements Canvas
      */
     function new_page() {
         SimpleLogger::log('tcpdf_logs', '6. ' . __FUNCTION__, "Not Implemented");
+        $this->_pdf->AddPage();
     }
 
     /**
