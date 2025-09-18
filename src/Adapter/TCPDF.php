@@ -966,10 +966,7 @@ class TCPDF implements Canvas
         
         // Clamp opacity to valid range (0.0 to 1.0)
         $opacity = max(0.0, min(1.0, $opacity));
-        
-        // TCPDF uses SetAlpha method for transparency
-        // The first parameter is for fill opacity, second for stroke opacity
-        $this->_pdf->SetAlpha($opacity, $opacity);
+        $this->_pdf->SetAlpha($opacity);
         
         // Store current opacity for potential future use
         $this->_current_opacity = $opacity;
