@@ -796,7 +796,7 @@ class CPDF implements Canvas
 
     public function text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0)
     {
-        SimpleLogger::log('cpdf_logs', '25. ' . __FUNCTION__, "Adding text at ({$x}, {$y}): " . substr($text, 0, 50) . (strlen($text) > 50 ? '...' : ''));
+        SimpleLogger::log('cpdf_logs', '25. ' . __FUNCTION__, "Adding text at ({$x}, {$y}), color: [" . implode(', ', $color) . "]: " . substr($text, 0, 50) . (strlen($text) > 50 ? '...' : ''));
         $pdf = $this->_pdf;
 
         $this->_set_fill_color($color);
