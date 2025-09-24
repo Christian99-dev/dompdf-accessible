@@ -539,7 +539,7 @@ class TCPDF implements Canvas
      * @param float  $angle       Angle to write the text at, measured clockwise starting from the x-axis
      */
     function text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0) {
-        SimpleLogger::log('cpdf_logs', '25. ' . __FUNCTION__, "Adding text at ({$x}, {$y}) with font: {$font}, text: " . substr($text, 0, 50) . (strlen($text) > 50 ? '...' : ''));        
+        SimpleLogger::log('tcpdf_logs', '25. ' . __FUNCTION__, "Adding text at ({$x}, {$y}) with font: {$font}, text: " . substr($text, 0, 50) . (strlen($text) > 50 ? '...' : ''));        
         // Convert color values from 0-1 range to 0-255 range for TCPDF
         $r = (int)($color[0] * 255);
         $g = (int)($color[1] * 255);
