@@ -919,8 +919,9 @@ class CPDF implements Canvas
         $options = $this->_dompdf->getOptions();
         $this->_pdf->selectFont($font, '', true, $options->getIsFontSubsettingEnabled());
 
-        SimpleLogger::log('cpdf_logs', '29a. ' . __FUNCTION__, "Calculated font height: " . ($this->_pdf->getFontHeight($size) * $options->getFontHeightRatio()));
-        return $this->_pdf->getFontHeight($size) * $options->getFontHeightRatio();
+        $height = $this->_pdf->getFontHeight($size) * $options->getFontHeightRatio();
+        SimpleLogger::log('cpdf_logs', '29a. ' . __FUNCTION__, "Returning value: {$height}");
+        return $height;
     }
 
     /*function get_font_x_height($font, $size) {

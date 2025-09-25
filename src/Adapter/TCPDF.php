@@ -674,20 +674,6 @@ class TCPDF implements Canvas
     }
 
     /**
-     * Enhanced font mapping with CSS properties support
-     * This method can be used to directly pass CSS font properties
-     * 
-     * @param string $fontFamily CSS font-family
-     * @param string $fontWeight CSS font-weight (normal, bold, 100-900)
-     * @param string $fontStyle CSS font-style (normal, italic, oblique)
-     * @return array Array with 'family' and 'style' keys
-     */
-    public function mapFontWithCSS($fontFamily, $fontWeight = 'normal', $fontStyle = 'normal') {
-        SimpleLogger::log('tcpdf_logs', '64b. ' . __FUNCTION__, "CSS font mapping: family={$fontFamily}, weight={$fontWeight}, style={$fontStyle}");
-        return $this->_mapFontFamily($fontFamily, $fontWeight, $fontStyle);
-    }
-
-    /**
      * Add a named destination (similar to <a name="foo">...</a> in html)
      *
      * @param string $anchorname The name of the named destination
@@ -868,43 +854,49 @@ class TCPDF implements Canvas
     function get_font_height($font, $size) {
         SimpleLogger::log('tcpdf_logs', '29. ' . __FUNCTION__, "Getting font height for font: {$font}, size: {$size}");
         
-        // Map font to TCPDF font family and style
-        $fontInfo = $this->_mapFontFamily($font);
+        // Use TCPDF's native font height calculation (similar to CPDF approach)
+        // This maps the font to TCPDF and gets the actual font metrics
+        $tcpdf_font = $this->_mapFontFamily($font);
+        $this->_pdf->SetFont($tcpdf_font['family'], $tcpdf_font['style'], $size);
         
-        // Store current font settings to restore later
-        $currentFont = $this->_pdf->getFontFamily();
-        $currentSize = $this->_pdf->getFontSizePt();
-        $currentStyle = $this->_pdf->getFontStyle();
+        // TCPDF's getCellHeight already includes cell_height_ratio
+        // We need the raw font height, so we divide by the TCPDF internal ratio
+        $raw_height = $this->_pdf->getCellHeight($size, false) / $this->_pdf->getCellHeightRatio();
         
-        try {
-            // Set the font for measurement
-            $this->_pdf->SetFont($fontInfo['family'], $fontInfo['style'], $size);
-            
-            // To match CPDF EXACTLY, return the exact same values as CPDF's output
-            // CPDF outputs: 14pt -> 13.86, 20pt -> 19.8
-            // These are already the FINAL values that include CPDF's internal ratio calculation
-            
-            // Create a lookup table or calculation that matches CPDF's exact output
-            $cpdfExactHeight = $size * .99;
-            
-            SimpleLogger::log('tcpdf_logs', '29a. ' . __FUNCTION__, "CPDF-exact match for size {$size}: returning exact CPDF value: {$cpdfExactHeight}");
+        // Now apply the Dompdf font height ratio (consistent with CPDF approach)
+        $options = $this->_dompdf->getOptions();
+        $height = $raw_height * $options->getFontHeightRatio();
+        
+        // Apply correction factors to match CPDF results exactly because TCPDF and CPDF have slight different font metrics
+        // These factors were determined by comparing TCPDF vs CPDF output, and literally calculating the differences
+        // to ensure identical font height calculations across both backends and dont break existing layouts by switching to tcpdf
+        $fontName = strtolower(basename($font));
+        switch (true) {
+            case (strpos($fontName, 'times') !== false):
+                $correction_factor = 0.9;
+                break;
+                
+            case (strpos($fontName, 'courier') !== false):
+            case (strpos($fontName, 'kurier') !== false):
+                $correction_factor = 0.786; 
+                break;
+                
+            case (strpos($fontName, 'helvetica') !== false):
+                $correction_factor = 0.925;
+                break;
 
-            return $cpdfExactHeight;
-
-        } catch (\Exception $e) {
-            // If there's an error, return a reasonable fallback based on font size
-            return $size * 1.2; // Standard line height multiplier
-        } finally {
-            // Restore original font settings
-            try {
-                $this->_pdf->SetFont($currentFont, $currentStyle ?: '', $currentSize);
-            } catch (\Exception $e) {
-                // If we can't restore, at least try to set a default font
-                $this->_pdf->SetFont('helvetica', '', 12);
-            }
+            default:
+                $correction_factor = 1;
+                break;
         }
+        
+        $height = $height * $correction_factor;
+        
+        SimpleLogger::log('tcpdf_logs', '29a. ' . __FUNCTION__, "Returning value: {$height}");
+        
+        return $height;
     }
-
+    
     /**
      * Returns the font x-height, in points
      *
