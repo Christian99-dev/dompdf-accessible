@@ -195,7 +195,8 @@ class TCPDF implements Canvas
      * @return int
      */
     function get_page_number() {
-        SimpleLogger::log('tcpdf_logs', '3. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '3. ' . __FUNCTION__, "Getting current page number");
+        return $this->_pdf->getPage();
     }
 
     /**
@@ -204,7 +205,8 @@ class TCPDF implements Canvas
      * @return int
      */
     function get_page_count() {
-        SimpleLogger::log('tcpdf_logs', '4. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '4. ' . __FUNCTION__, "Getting total page count");
+        return $this->_page_count ?? $this->_pdf->getPage();
     }
 
     /**
@@ -213,7 +215,8 @@ class TCPDF implements Canvas
      * @param int $count
      */
     function set_page_count($count) {
-        SimpleLogger::log('tcpdf_logs', '5. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '5. ' . __FUNCTION__, "Setting total page count");
+        $this->_page_count = (int)$count;
     }
 
     /**
@@ -409,7 +412,10 @@ class TCPDF implements Canvas
      * @param array $style
      */
     public function page_line($x1, $y1, $x2, $y2, $color, $width, $style = []) {
-        SimpleLogger::log('tcpdf_logs', '13. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '13. ' . __FUNCTION__, "Setting page line from ({$x1}, {$y1}) to ({$x2}, {$y2})");
+        $this->processPageScript(function () use ($x1, $y1, $x2, $y2, $color, $width, $style) {
+            $this->line($x1, $y1, $x2, $y2, $color, $width, $style);
+        });
     }
 
     /**
