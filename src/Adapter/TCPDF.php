@@ -236,7 +236,88 @@ class TCPDF implements Canvas
      * @param string $cap   `butt`, `round`, or `square`
      */
     function line($x1, $y1, $x2, $y2, $color, $width, $style = [], $cap = "butt") {
-        SimpleLogger::log('tcpdf_logs', '7. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '7. ' . __FUNCTION__, "Drawing line from ({$x1}, {$y1}) to ({$x2}, {$y2})");
+        
+        // Set stroke color
+        $this->_set_stroke_color($color);
+        
+        // Set line style (width, cap, dash pattern)
+        $this->_set_line_style($width, $cap, "", $style);
+        
+        // Draw the line (TCPDF uses different coordinate system - y is inverted)
+        $this->_pdf->Line($x1, $y1, $x2, $y2);
+        
+        // Set line transparency
+        $this->_set_line_transparency("Normal", $this->_current_opacity);
+    }
+
+    /**
+     * Set stroke color for drawing operations
+     *
+     * @param array $color Color array in the format `[r, g, b, "alpha" => alpha]`
+     *                     where r, g, b, and alpha are float values between 0 and 1
+     */
+    protected function _set_stroke_color($color) {
+        SimpleLogger::log('tcpdf_logs', '66. ' . __FUNCTION__, "Setting stroke color {$color}");
+        // Convert color values from 0-1 range to 0-255 range for TCPDF
+        $r = (int)($color[0] * 255);
+        $g = (int)($color[1] * 255);
+        $b = (int)($color[2] * 255);
+        
+        $this->_pdf->SetDrawColor($r, $g, $b);
+        
+        // Handle alpha if present
+        if (isset($color['alpha'])) {
+            $this->_pdf->SetAlpha($color['alpha']);
+        }
+    }
+
+    /**
+     * Set line style for drawing operations
+     *
+     * @param float  $width Line width
+     * @param string $cap   Line cap style: 'butt', 'round', or 'square'
+     * @param string $join  Line join style (unused in this context)
+     * @param array  $style Dash pattern array
+     */
+    protected function _set_line_style($width, $cap = "butt", $join = "", $style = []) {
+        SimpleLogger::log('tcpdf_logs', '67. ' . __FUNCTION__, "Setting line style with width {$width}, cap {$cap}, style " . json_encode($style));
+        // Set line width
+        $this->_pdf->SetLineWidth($width);
+        
+        // Set line cap style using SetLineStyle array
+        $capStyle = 0; // butt cap (default)
+        switch (strtolower($cap)) {
+            case 'round':
+                $capStyle = 1;
+                break;
+            case 'square':
+                $capStyle = 2;
+                break;
+        }
+        
+        // Create line style array for TCPDF
+        $lineStyle = [
+            'width' => $width,
+            'cap' => $capStyle,
+            'join' => 0, // miter join (default)
+            'dash' => !empty($style) ? $style : 0,
+            'color' => null // Use current draw color
+        ];
+        
+        $this->_pdf->SetLineStyle($lineStyle);
+    }
+
+    /**
+     * Set line transparency
+     *
+     * @param string $mode    Blend mode
+     * @param float  $opacity Opacity value (0-1)
+     */
+    protected function _set_line_transparency($mode, $opacity) {
+        SimpleLogger::log('tcpdf_logs', '68. ' . __FUNCTION__, "Setting line transparency to {$opacity} with mode {$mode}");
+        // TCPDF handles transparency through SetAlpha
+        $this->_pdf->SetAlpha($opacity);
     }
 
     /**
