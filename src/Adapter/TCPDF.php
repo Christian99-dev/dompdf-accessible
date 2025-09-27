@@ -1102,7 +1102,8 @@ class TCPDF implements Canvas
      * @param string $code
      */
     function javascript($code) {
-        SimpleLogger::log('tcpdf_logs', '32. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '32. ' . __FUNCTION__, "Adding JavaScript code to PDF");
+        $this->_pdf->IncludeJS($code);
     }
 
     /**
