@@ -174,6 +174,10 @@ class TCPDF implements Canvas
         $this->_pdf->SetMargins(0, 0, 0);
         $this->_pdf->SetAutoPageBreak(false, 0);
 
+        $this->_pdf->setCellPaddings(0,0,0,0);
+        $this->_pdf->setCellMargins(0,0,0,0);
+        $this->_pdf->setCellHeightRatio(1);
+
         // Add first page
         $this->_pdf->AddPage();
 
