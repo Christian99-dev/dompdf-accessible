@@ -9,6 +9,7 @@ namespace Dompdf\Adapter;
 
 use Dompdf\Canvas;
 use Dompdf\Dompdf;
+use Dompdf\FontMetrics;
 use Dompdf\SimpleLogger;
 use TCPDF as TCPDFLibrary;
 
@@ -184,7 +185,8 @@ class TCPDF implements Canvas
      * @return Dompdf
      */
     function get_dompdf() {
-        SimpleLogger::log('tcpdf_logs', '2. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '2. ' . __FUNCTION__, "Getting Dompdf instance");
+        return $this->_dompdf;
     }
 
     /**
@@ -335,19 +337,34 @@ class TCPDF implements Canvas
     }
 
     /**
-     * Processes a callback on every page.
+     * Processes a callback or script on every page.
      *
      * The callback function receives the four parameters `int $pageNumber`,
      * `int $pageCount`, `Canvas $canvas`, and `FontMetrics $fontMetrics`, in
-     * that order.
+     * that order. If a script is passed as string, the variables `$PAGE_NUM`,
+     * `$PAGE_COUNT`, `$pdf`, and `fontMetrics` are available instead. Passing
+     * a script as string is deprecated and will be removed in a future version.
      *
      * This function can be used to add page numbers to all pages after the
      * first one, for example.
      *
-     * @param callable $callback The callback function to process on every page
+     * @param callable|string $callback The callback function or PHP script to process on every page
      */
     public function page_script($callback): void {
-        SimpleLogger::log('tcpdf_logs', '31. ' . __FUNCTION__, "setting page_script callback" . json_encode($callback));
+        SimpleLogger::log('tcpdf_logs', '31. ' . __FUNCTION__, "Setting page script");
+        if (is_string($callback)) {
+            $this->processPageScript(function (
+                int $PAGE_NUM,
+                int $PAGE_COUNT,
+                self $pdf,
+                FontMetrics $fontMetrics
+            ) use ($callback) {
+                eval($callback);
+            });
+            return;
+        }
+
+        $this->processPageScript($callback);
     }
 
     /**
@@ -368,7 +385,15 @@ class TCPDF implements Canvas
      * @param float  $angle      Angle to write the text at, measured clockwise starting from the x-axis
      */
     public function page_text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0) {
-        SimpleLogger::log('tcpdf_logs', '26. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '26. ' . __FUNCTION__, "Setting page text at ({$x}, {$y})");
+        $this->processPageScript(function (int $pageNumber, int $pageCount) use ($x, $y, $text, $font, $size, $color, $word_space, $char_space, $angle) {
+            $text = str_replace(
+                ["{PAGE_NUM}", "{PAGE_COUNT}"],
+                [$pageNumber, $pageCount],
+                $text
+            );
+            $this->text($x, $y, $text, $font, $size, $color, $word_space, $char_space, $angle);
+        });
     }
 
     /**
@@ -1028,5 +1053,36 @@ class TCPDF implements Canvas
         }
         
         return $this->_pdf->Output('', 'S');
+    }
+
+    /**
+     * Processes a callback on every page
+     *
+     * @param callable $callback The callback function to process on every page
+     */
+    protected function processPageScript(callable $callback): void
+    {
+        SimpleLogger::log('tcpdf_logs', '65. ' . __FUNCTION__, "Processing page script callback");
+        
+        // Get the current page to restore it later
+        $currentPage = $this->_pdf->getPage();
+        
+        // Get total number of pages
+        $pageCount = $this->_pdf->getNumPages();
+        
+        // Loop through all pages
+        for ($pageNumber = 1; $pageNumber <= $pageCount; $pageNumber++) {
+            // Set the current page
+            $this->_pdf->setPage($pageNumber);
+            
+            // Get FontMetrics instance
+            $fontMetrics = $this->_dompdf->getFontMetrics();
+            
+            // Call the callback with page number, page count, canvas, and font metrics
+            $callback($pageNumber, $pageCount, $this, $fontMetrics);
+        }
+        
+        // Restore the original current page
+        $this->_pdf->setPage($currentPage);
     }
 }
