@@ -795,7 +795,17 @@ class TCPDF implements Canvas
      * @param string $anchorname The name of the named destination
      */
     function add_named_dest($anchorname) {
-        SimpleLogger::log('tcpdf_logs', '34. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '34. ' . __FUNCTION__, "Adding named destination: {$anchorname}");
+        
+        // Get current position
+        $y = $this->_pdf->GetY();
+        
+        // Add bookmark/named destination at current position
+        // TCPDF uses Bookmark method to create destinations
+        $this->_pdf->Bookmark($anchorname, 0, $y, '', '', array(0,0,0));
+        
+        // Also create a destination that can be linked to
+        $this->_pdf->setDestination($anchorname, $y, $this->_pdf->getPage());
     }
 
     /**
