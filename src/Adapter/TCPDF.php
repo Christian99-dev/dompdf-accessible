@@ -818,7 +818,20 @@ class TCPDF implements Canvas
      * @param float  $height The height of the link
      */
     function add_link($url, $x, $y, $width, $height) {
-        SimpleLogger::log('tcpdf_logs', '35. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '35. ' . __FUNCTION__, "Adding link to: {$url} at ({$x}, {$y}) size {$width}x{$height}");
+        
+        if (strpos($url, '#') === 0) {
+            // Internal link to named destination
+            $destination = substr($url, 1);
+            if ($destination) {
+                // For TCPDF internal links, we need to use the format: '#<destination>'
+                // TCPDF's Link method can handle internal destinations with # prefix
+                $this->_pdf->Link($x, $y, $width, $height, '#' . $destination);
+            }
+        } else {
+            // External link
+            $this->_pdf->Link($x, $y, $width, $height, $url);
+        }
     }
 
     /**
