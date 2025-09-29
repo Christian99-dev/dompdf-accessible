@@ -1117,8 +1117,50 @@ class TCPDF implements Canvas
      * 'FitBV' left
      * @param array $options
      */
-    function set_default_view($view, $options = []) {
-        SimpleLogger::log('tcpdf_logs', '37. ' . __FUNCTION__, "Not Implemented");
+    public function set_default_view($view, $options = [])
+    {
+        SimpleLogger::log('tcpdf_logs', '37. ' . __FUNCTION__, "Setting default view: {$view}");
+        
+        $zoom   = 'default';
+        $layout = 'SinglePage';
+        $mode   = 'UseNone';
+
+        switch (strtoupper($view)) {
+            case 'FIT':   // ganze Seite anzeigen
+            case 'FITB':  // ganze Seite (Bounding Box)
+                $zoom = 'fullpage';
+                break;
+
+            case 'FITH':  // Fensterbreite einpassen
+            case 'FITBH': // Fensterbreite (Bounding Box)
+            case 'FITV':  // Fensterhöhe (TCPDF hat kein FitV → annähern)
+            case 'FITBV': // Fensterhöhe (Bounding Box)
+                $zoom = 'fullwidth'; // beste Annäherung in TCPDF
+                break;
+
+            case 'XYZ':
+                // cPDF: XYZ left top zoom
+                if (!empty($options)) {
+                    $last = end($options);
+                    if (is_numeric($last)) {
+                        $zoom = (float) $last; // z. B. 150 → 150 %
+                    }
+                } else {
+                    $zoom = 'real'; // falls kein Zoom angegeben
+                }
+                break;
+
+            case 'FITR':
+                // FitR (Rectangle) wird in TCPDF nicht unterstützt
+                // => fallback: ganze Seite
+                $zoom = 'fullpage';
+                break;
+
+            default:
+                $zoom = 'default';
+        }
+
+        $this->_pdf->SetDisplayMode($zoom, $layout, $mode);
     }
 
     /**
