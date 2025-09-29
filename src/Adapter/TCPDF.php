@@ -126,6 +126,11 @@ class TCPDF implements Canvas
     protected $_current_opacity = 1.0;
 
     /**
+     * @var array|null
+     */
+    protected $_clipping_bounds = null;
+
+    /**
      * @param string|float[] $paper       The paper size to use as either a standard paper size (see {@link Dompdf\Adapter\TCPDF::$PAPER_SIZES})
      *                                    or an array of the form `[x1, y1, x2, y2]` (typically `[0, 0, width, height]`).
      * @param string         $orientation The paper orientation, either `portrait` or `landscape`.
@@ -440,8 +445,16 @@ class TCPDF implements Canvas
         // Set fill color
         $this->_set_fill_color($color);
         
-        // Draw filled rectangle - 'F' = fill only
-        $this->_pdf->Rect($x1, $y1, $w, $h, 'F');
+        // Check if we're in a circular clipping context
+        if ($this->_clipping_bounds && $this->_clipping_bounds[4] === 'circle') {
+            // We're in a circle clipping context, draw a filled circle instead
+            [$center_x, $center_y, $radius] = $this->_clipping_bounds;
+            SimpleLogger::log('tcpdf_logs', '10a. ' . __FUNCTION__, "Drawing filled circle instead at ({$center_x}, {$center_y}) radius {$radius}");
+            $this->_pdf->Circle($center_x, $center_y, $radius, 0, 360, 'F');
+        } else {
+            // Regular filled rectangle
+            $this->_pdf->Rect($x1, $y1, $w, $h, 'F');
+        }
         
         // Set fill transparency
         $this->_set_fill_transparency("Normal", $this->_current_opacity);
@@ -458,10 +471,12 @@ class TCPDF implements Canvas
     function clipping_rectangle($x1, $y1, $w, $h) {
         SimpleLogger::log('tcpdf_logs', '14. ' . __FUNCTION__, "Setting clipping rectangle at ({$x1}, {$y1}) size {$w}x{$h}");
         
-        // For now, store clipping information for later implementation
-        // TCPDF clipping is more complex and may require direct PDF commands
-        // This is a placeholder that stores the clipping state
-        // TODO: Implement proper TCPDF clipping using available methods
+        // Save current graphics state
+        $this->_pdf->StartTransform();
+        
+        // Create clipping rectangle - TCPDF doesn't have simple clipping, so we'll try a workaround
+        // For now, store clipping bounds for potential future use
+        $this->_clipping_bounds = [$x1, $y1, $w, $h, 'rectangle'];
     }
 
     /**
@@ -479,10 +494,21 @@ class TCPDF implements Canvas
     function clipping_roundrectangle($x1, $y1, $w, $h, $tl, $tr, $br, $bl) {
         SimpleLogger::log('tcpdf_logs', '15. ' . __FUNCTION__, "Setting clipping rounded rectangle at ({$x1}, {$y1}) size {$w}x{$h}");
         
-        // For now, store clipping information for later implementation
-        // TCPDF rounded rectangle clipping is complex and may require direct PDF commands
-        // This is a placeholder that stores the clipping state
-        // TODO: Implement proper TCPDF rounded rectangle clipping
+        // Save current graphics state
+        $this->_pdf->StartTransform();
+        
+        // Store clipping bounds for rounded rectangle
+        $this->_clipping_bounds = [$x1, $y1, $w, $h, 'roundrectangle', $tl, $tr, $br, $bl];
+        
+        // For circles (when all corners are equal and radius is 50% of min dimension)
+        $min_dimension = min($w, $h);
+        if ($tl === $tr && $tr === $br && $br === $bl && $tl >= $min_dimension / 2) {
+            // This is essentially a circle
+            $center_x = $x1 + $w / 2;
+            $center_y = $y1 + $h / 2;
+            $radius = $min_dimension / 2;
+            $this->_clipping_bounds = [$center_x, $center_y, $radius, 0, 'circle'];
+        }
     }
 
     /**
@@ -503,7 +529,13 @@ class TCPDF implements Canvas
      * Ends the last clipping shape
      */
     function clipping_end() {
-        SimpleLogger::log('tcpdf_logs', '17. ' . __FUNCTION__, "Not Implemented");
+        SimpleLogger::log('tcpdf_logs', '17. ' . __FUNCTION__, "Ending clipping");
+        
+        // Restore graphics state
+        $this->_pdf->StopTransform();
+        
+        // Clear clipping bounds
+        $this->_clipping_bounds = null;
     }
 
     /**
