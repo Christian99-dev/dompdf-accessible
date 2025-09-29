@@ -511,8 +511,11 @@ class TCPDF implements Canvas
         // Save current graphics state
         $this->_pdf->StartTransform();
         
-        // Create clipping rectangle - TCPDF doesn't have simple clipping, so we'll try a workaround
-        // For now, store clipping bounds for potential future use
+        // Use TCPDF's built-in clipping support
+        // Rect with 'CNZ' creates a clipping path using the non-zero winding rule
+        $this->_pdf->Rect($x1, $y1, $w, $h, 'CNZ');
+        
+        // Store clipping bounds for our custom logic as fallback
         $this->_clipping_bounds = [$x1, $y1, $w, $h, 'rectangle'];
     }
 
@@ -534,6 +537,11 @@ class TCPDF implements Canvas
         // Save current graphics state
         $this->_pdf->StartTransform();
         
+        // Use TCPDF's rounded rectangle for clipping
+        // RoundedRect with 'CNZ' creates a clipping path
+        $radius = min($tl, $tr, $br, $bl); // Use minimum radius for consistency
+        $this->_pdf->RoundedRect($x1, $y1, $w, $h, $radius, '1111', 'CNZ');
+        
         // Store clipping bounds for rounded rectangle
         $this->_clipping_bounds = [$x1, $y1, $w, $h, 'roundrectangle', $tl, $tr, $br, $bl];
         
@@ -544,6 +552,9 @@ class TCPDF implements Canvas
             $center_x = $x1 + $w / 2;
             $center_y = $y1 + $h / 2;
             $radius = $min_dimension / 2;
+            
+            // Use Circle for true circular clipping
+            $this->_pdf->Circle($center_x, $center_y, $radius, 0, 360, 'CNZ');
             $this->_clipping_bounds = [$center_x, $center_y, $radius, 0, 'circle'];
         }
     }
@@ -939,6 +950,45 @@ class TCPDF implements Canvas
      */
     function text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0) {
         SimpleLogger::log('tcpdf_logs', '25. ' . __FUNCTION__, "Adding text at ({$x}, {$y}) with font: {$font}, text: " . substr($text, 0, 50) . (strlen($text) > 50 ? '...' : ''));        
+        
+        // Check if we're in a clipping context and need to clip text
+        if ($this->_clipping_bounds) {
+            list($clip_x, $clip_y, $clip_w, $clip_h, $clip_type) = $this->_clipping_bounds;
+            
+            // Get text dimensions to check if any part of the text is within bounds
+            $fontInfo = $this->_mapFontFamily($font);
+            $this->_pdf->SetFont($fontInfo['family'], $fontInfo['style'], $size);
+            $text_width = $this->_pdf->GetStringWidth($text);
+            $text_height = $size; // Approximate text height as font size
+            
+            // Check if the entire text box is outside clipping bounds
+            $text_right = $x + $text_width;
+            $text_bottom = $y + $text_height;
+            
+            if ($text_right < $clip_x || $x > $clip_x + $clip_w || 
+                $text_bottom < $clip_y || $y > $clip_y + $clip_h) {
+                SimpleLogger::log('tcpdf_logs', '25. ' . __FUNCTION__, "Text completely outside clipping bounds - skipping");
+                return;
+            }
+            
+            // For circle/roundrectangle clipping, we need more sophisticated checking
+            if ($clip_type === 'circle' || $clip_type === 'roundrectangle') {
+                $center_x = $clip_x + $clip_w / 2;
+                $center_y = $clip_y + $clip_h / 2;
+                $radius = min($clip_w, $clip_h) / 2;
+                
+                // Check if text start position is too far from center
+                $distance = sqrt(pow($x - $center_x, 2) + pow($y - $center_y, 2));
+                if ($distance > $radius + $text_width / 2) {
+                    SimpleLogger::log('tcpdf_logs', '25. ' . __FUNCTION__, "Text too far from circle center - skipping");
+                    return;
+                }
+            }
+            
+            // If we reach here, at least part of the text should be visible
+            SimpleLogger::log('tcpdf_logs', '25. ' . __FUNCTION__, "Text at ({$x}, {$y}) intersects with clipping bounds - rendering");
+        }
+        
         // Convert color values from 0-1 range to 0-255 range for TCPDF
         $r = (int)($color[0] * 255);
         $g = (int)($color[1] * 255);
