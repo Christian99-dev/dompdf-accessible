@@ -687,8 +687,16 @@ class TCPDF implements Canvas
     function scale($s_x, $s_y, $x, $y) {
         SimpleLogger::log('tcpdf_logs', '22. ' . __FUNCTION__, "Scaling by ({$s_x}, {$s_y}) at ({$x}, {$y})");
         
+        // TCPDF expects scale factors as percentages (100 = 100% = no scaling)
+        // dompdf likely passes factors as decimals (1.0 = 100% = no scaling)
+        // Convert from decimal to percentage
+        $tcpdf_s_x = $s_x * 100;
+        $tcpdf_s_y = $s_y * 100;
+        
+        SimpleLogger::log('tcpdf_logs', '22a. ' . __FUNCTION__, "Converted to TCPDF format: ({$tcpdf_s_x}%, {$tcpdf_s_y}%)");
+        
         // Use TCPDF's Scale method
-        $this->_pdf->Scale($s_x, $s_y, $x, $y);
+        $this->_pdf->Scale($tcpdf_s_x, $tcpdf_s_y, $x, $y);
     }
 
     /**
@@ -737,7 +745,8 @@ class TCPDF implements Canvas
         // Check if this is a pure scale matrix
         if (abs($b) < 0.001 && abs($c) < 0.001) { // No rotation/skew
             if (abs($a - 1) > 0.001 || abs($d - 1) > 0.001) { // Scale factors != 1
-                $this->scale($a * 100, $d * 100, $e, $f);
+                // Convert to percentage for TCPDF
+                $this->scale($a, $d, $e, $f);
             }
             if (abs($e) > 0.001 || abs($f) > 0.001) { // Translation
                 $this->translate($e, $f);
