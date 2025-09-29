@@ -262,7 +262,7 @@ class TCPDF implements Canvas
      *                     where r, g, b, and alpha are float values between 0 and 1
      */
     protected function _set_stroke_color($color) {
-        SimpleLogger::log('tcpdf_logs', '66. ' . __FUNCTION__, "Setting stroke color {$color}");
+        SimpleLogger::log('tcpdf_logs', '66. ' . __FUNCTION__, "Setting stroke color " . json_encode($color));
         // Convert color values from 0-1 range to 0-255 range for TCPDF
         $r = (int)($color[0] * 255);
         $g = (int)($color[1] * 255);
@@ -286,30 +286,18 @@ class TCPDF implements Canvas
      */
     protected function _set_line_style($width, $cap = "butt", $join = "", $style = []) {
         SimpleLogger::log('tcpdf_logs', '67. ' . __FUNCTION__, "Setting line style with width {$width}, cap {$cap}, style " . json_encode($style));
+        
         // Set line width
         $this->_pdf->SetLineWidth($width);
         
-        // Set line cap style using SetLineStyle array
-        $capStyle = 0; // butt cap (default)
-        switch (strtolower($cap)) {
-            case 'round':
-                $capStyle = 1;
-                break;
-            case 'square':
-                $capStyle = 2;
-                break;
+        // For now, let's use a simpler approach and just set basic line properties
+        // TODO: Implement full line style support including caps and dashes
+        
+        // If we have a dash pattern, we could implement it later
+        // For now, just use solid lines to avoid the TCPDF error
+        if (!empty($style) && is_array($style)) {
+            SimpleLogger::log('tcpdf_logs', '67a. ' . __FUNCTION__, "Dash patterns not yet implemented - using solid line");
         }
-        
-        // Create line style array for TCPDF
-        $lineStyle = [
-            'width' => $width,
-            'cap' => $capStyle,
-            'join' => 0, // miter join (default)
-            'dash' => !empty($style) ? $style : 0,
-            'color' => null // Use current draw color
-        ];
-        
-        $this->_pdf->SetLineStyle($lineStyle);
     }
 
     /**
