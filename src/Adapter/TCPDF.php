@@ -647,8 +647,13 @@ class TCPDF implements Canvas
     function rotate($angle, $x, $y) {
         SimpleLogger::log('tcpdf_logs', '20. ' . __FUNCTION__, "Rotating by {$angle} degrees at ({$x}, {$y})");
         
+        // TCPDF and CPDF may have different coordinate systems and rotation directions
+        // TCPDF uses counter-clockwise for positive angles in a flipped Y coordinate system
+        // We may need to invert the angle to match CPDF's behavior
+        $adjusted_angle = -$angle; // Try inverting the angle direction
+        
         // Use TCPDF's Rotate method
-        $this->_pdf->Rotate($angle, $x, $y);
+        $this->_pdf->Rotate($adjusted_angle, $x, $y);
     }
 
     /**
@@ -662,8 +667,13 @@ class TCPDF implements Canvas
     function skew($angle_x, $angle_y, $x, $y) {
         SimpleLogger::log('tcpdf_logs', '21. ' . __FUNCTION__, "Skewing by ({$angle_x}, {$angle_y}) at ({$x}, {$y})");
         
+        // TCPDF may have different coordinate system conventions
+        // Since Y coordinates are flipped in TCPDF, we might need to adjust the skew angles
+        $adjusted_angle_x = -$angle_x; // Try inverting X skew
+        $adjusted_angle_y = -$angle_y; // Try inverting Y skew
+        
         // Use TCPDF's Skew method
-        $this->_pdf->Skew($angle_x, $angle_y, $x, $y);
+        $this->_pdf->Skew($adjusted_angle_x, $adjusted_angle_y, $x, $y);
     }
 
     /**
@@ -705,13 +715,49 @@ class TCPDF implements Canvas
      * @param float $f
      */
     function transform($a, $b, $c, $d, $e, $f) {
-        SimpleLogger::log('tcpdf_logs', '24. ' . __FUNCTION__, "Applying transformation matrix");
+        SimpleLogger::log('tcpdf_logs', '24. ' . __FUNCTION__, "Applying transformation matrix ({$a}, {$b}, {$c}, {$d}, {$e}, {$f})");
         
-        // Use TCPDF's transformation matrix method
-        // TCPDF may use different method names, for now implement basic transformation
-        $this->_pdf->StartTransform();
-        // Apply transformation - this may need different implementation based on TCPDF version
-        // For now, apply basic transformations that approximate the matrix transformation
+        // TCPDF uses a protected Transform method that takes an array
+        // The transformation matrix format is [a, b, c, d, e, f]
+        // Since the method is protected, we need to use reflection or find another way
+        
+        // For now, let's decompose the transformation matrix into individual operations
+        // This is an approximation but should work for most cases
+        
+        // Check if this is a pure rotation matrix
+        if (abs($a * $d - $b * $c - 1) < 0.001) { // determinant ≈ 1, likely rotation
+            $angle = atan2($b, $a) * 180 / M_PI;
+            if (abs($angle) > 0.1) { // Only apply if angle is significant
+                // Invert angle for TCPDF to match CPDF behavior
+                $this->rotate(-$angle, $e, $f);
+                return;
+            }
+        }
+        
+        // Check if this is a pure scale matrix
+        if (abs($b) < 0.001 && abs($c) < 0.001) { // No rotation/skew
+            if (abs($a - 1) > 0.001 || abs($d - 1) > 0.001) { // Scale factors != 1
+                $this->scale($a * 100, $d * 100, $e, $f);
+            }
+            if (abs($e) > 0.001 || abs($f) > 0.001) { // Translation
+                $this->translate($e, $f);
+            }
+            return;
+        }
+        
+        // For complex transformations, try to use TCPDF's internal method via reflection
+        try {
+            $reflection = new \ReflectionClass($this->_pdf);
+            $method = $reflection->getMethod('Transform');
+            $method->setAccessible(true);
+            $method->invoke($this->_pdf, [$a, $b, $c, $d, $e, $f]);
+        } catch (\Exception $ex) {
+            SimpleLogger::log('tcpdf_logs', '24a. ' . __FUNCTION__, "Failed to use Transform method: " . $ex->getMessage());
+            // Fallback: apply as separate operations
+            if (abs($e) > 0.001 || abs($f) > 0.001) {
+                $this->translate($e, $f);
+            }
+        }
     }
 
     /**
