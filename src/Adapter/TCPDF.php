@@ -445,14 +445,51 @@ class TCPDF implements Canvas
         // Set fill color
         $this->_set_fill_color($color);
         
-        // Check if we're in a circular clipping context
-        if ($this->_clipping_bounds && $this->_clipping_bounds[4] === 'circle') {
-            // We're in a circle clipping context, draw a filled circle instead
-            [$center_x, $center_y, $radius] = $this->_clipping_bounds;
-            SimpleLogger::log('tcpdf_logs', '10a. ' . __FUNCTION__, "Drawing filled circle instead at ({$center_x}, {$center_y}) radius {$radius}");
-            $this->_pdf->Circle($center_x, $center_y, $radius, 0, 360, 'F');
+        // Check if we're in a clipping context
+        if ($this->_clipping_bounds) {
+            $clip_type = $this->_clipping_bounds[4];
+            
+            if ($clip_type === 'circle') {
+                // We're in a circle clipping context, draw a filled circle instead
+                [$center_x, $center_y, $radius] = $this->_clipping_bounds;
+                SimpleLogger::log('tcpdf_logs', '10a. ' . __FUNCTION__, "Drawing filled circle instead at ({$center_x}, {$center_y}) radius {$radius}");
+                $this->_pdf->Circle($center_x, $center_y, $radius, 0, 360, 'F');
+            } elseif ($clip_type === 'rectangle') {
+                // We're in a rectangle clipping context, clip the filled rectangle
+                [$clip_x, $clip_y, $clip_w, $clip_h] = $this->_clipping_bounds;
+                SimpleLogger::log('tcpdf_logs', '10b. ' . __FUNCTION__, "Clipping rectangle to bounds ({$clip_x}, {$clip_y}) size {$clip_w}x{$clip_h}");
+                
+                // Calculate intersection of the rectangle with clipping bounds
+                $intersect_x = max($x1, $clip_x);
+                $intersect_y = max($y1, $clip_y);
+                $intersect_w = min($x1 + $w, $clip_x + $clip_w) - $intersect_x;
+                $intersect_h = min($y1 + $h, $clip_y + $clip_h) - $intersect_y;
+                
+                // Only draw if there's a valid intersection
+                if ($intersect_w > 0 && $intersect_h > 0) {
+                    $this->_pdf->Rect($intersect_x, $intersect_y, $intersect_w, $intersect_h, 'F');
+                }
+            } elseif ($clip_type === 'roundrectangle') {
+                // We're in a rounded rectangle clipping context
+                [$clip_x, $clip_y, $clip_w, $clip_h, , $tl, $tr, $br, $bl] = $this->_clipping_bounds;
+                SimpleLogger::log('tcpdf_logs', '10c. ' . __FUNCTION__, "Clipping to rounded rectangle bounds ({$clip_x}, {$clip_y}) size {$clip_w}x{$clip_h}");
+                
+                // For rounded rectangles, use TCPDF's RoundedRect method if the content fits within bounds
+                $intersect_x = max($x1, $clip_x);
+                $intersect_y = max($y1, $clip_y);
+                $intersect_w = min($x1 + $w, $clip_x + $clip_w) - $intersect_x;
+                $intersect_h = min($y1 + $h, $clip_y + $clip_h) - $intersect_y;
+                
+                if ($intersect_w > 0 && $intersect_h > 0) {
+                    // Use rounded rectangle for better clipping approximation
+                    $this->_pdf->RoundedRect($clip_x, $clip_y, $clip_w, $clip_h, min($tl, $tr, $br, $bl), '1111', 'F');
+                }
+            } else {
+                // Unknown clipping type, use regular rectangle
+                $this->_pdf->Rect($x1, $y1, $w, $h, 'F');
+            }
         } else {
-            // Regular filled rectangle
+            // No clipping context, regular filled rectangle
             $this->_pdf->Rect($x1, $y1, $w, $h, 'F');
         }
         
