@@ -15,6 +15,7 @@ use Dompdf\Renderer\TableCell;
 use Dompdf\Renderer\TableRow;
 use Dompdf\Renderer\TableRowGroup;
 use Dompdf\Renderer\Text;
+use Dompdf\SimpleLogger; // Added for detailed frame/node logging
 
 /**
  * Concrete renderer
@@ -58,6 +59,22 @@ class Renderer extends AbstractRenderer
         global $_dompdf_debug;
 
         $this->_check_callbacks("begin_frame", $frame);
+
+        // Safe attribute extraction ()
+        $node = $frame->get_node();
+        $allAttrs = [];
+        if ($node->hasAttributes()) {
+            /** @var \DOMAttr $attr */
+            foreach ($node->attributes as $attr) {
+                $allAttrs[$attr->name] = $attr->value;
+            }
+
+            SimpleLogger::log(
+                "renderer_logs",
+                __FUNCTION__,
+                "Rendering " . $node->nodeName . "\n" . json_encode($allAttrs, JSON_PRETTY_PRINT)
+            );
+        }
 
         if ($_dompdf_debug) {
             echo $frame;
