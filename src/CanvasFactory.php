@@ -6,6 +6,9 @@
  */
 namespace Dompdf;
 
+// Include our AccessibleTCPDF class
+require_once __DIR__ . '/../lib/AccessibleTCPDF.php';
+
 /**
  * Create canvas instances
  *
@@ -45,7 +48,7 @@ class CanvasFactory
                 $class = "Dompdf\\Adapter\\PDFLib";
             }
             elseif (($backend === "tcpdf") &&
-                class_exists("TCPDF", true)
+                class_exists("AccessibleTCPDF", true)
             ) {
                 $class = "Dompdf\\Adapter\\TCPDF";
             }

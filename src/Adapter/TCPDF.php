@@ -11,7 +11,10 @@ use Dompdf\Canvas;
 use Dompdf\Dompdf;
 use Dompdf\FontMetrics;
 use Dompdf\SimpleLogger;
-use TCPDF as TCPDFLibrary;
+
+// Include our local AccessibleTCPDF
+require_once __DIR__ . '/../../lib/AccessibleTCPDF.php';
+use AccessibleTCPDF;
 
 /**
  * TCPDF rendering interface
@@ -89,7 +92,7 @@ class TCPDF implements Canvas
     ];
 
     /**
-     * @var TCPDFLibrary
+     * @var AccessibleTCPDF
      */
     protected $_pdf;
 
@@ -162,7 +165,7 @@ class TCPDF implements Canvas
 
         // Initialize TCPDF
         $tcpdf_orientation = strtolower($orientation) === "landscape" ? 'L' : 'P';
-        $this->_pdf = new TCPDFLibrary($tcpdf_orientation, 'pt', [$size[2] - $size[0], $size[3] - $size[1]], true, 'UTF-8', false);
+        $this->_pdf = new AccessibleTCPDF($tcpdf_orientation, 'pt', [$size[2] - $size[0], $size[3] - $size[1]], true, 'UTF-8', false);
 
         // Set document information
         $this->_pdf->SetCreator(sprintf("%s + TCPDF", $this->_dompdf->version ?? 'dompdf'));
