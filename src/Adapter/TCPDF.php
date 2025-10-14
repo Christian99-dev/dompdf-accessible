@@ -165,7 +165,16 @@ class TCPDF implements Canvas
 
         // Initialize TCPDF
         $tcpdf_orientation = strtolower($orientation) === "landscape" ? 'L' : 'P';
-        $this->_pdf = new AccessibleTCPDF($tcpdf_orientation, 'pt', [$size[2] - $size[0], $size[3] - $size[1]], true, 'UTF-8', false);
+        $this->_pdf = new AccessibleTCPDF(
+            $tcpdf_orientation, 
+            'pt', 
+            [$size[2] - $size[0], $size[3] - $size[1]], 
+            true, 
+            'UTF-8', 
+            false,
+            $this->_dompdf->getOptions()->isPDFAEnabled(),
+            $this->_dompdf->getOptions()->isPDFUAEnabled()
+        );
 
         // Set document information
         $this->_pdf->SetCreator(sprintf("%s + TCPDF", $this->_dompdf->version ?? 'dompdf'));

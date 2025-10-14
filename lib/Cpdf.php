@@ -82,6 +82,11 @@ class Cpdf
     public $pdfa = false;
 
     /**
+     * @var bool Is PDF/UA compliance mode enabled
+     */
+    public $pdfua = false;
+
+    /**
      * @var array Array carrying information about the fonts that the system currently knows about
      * Used to ensure that a font is not loaded twice, among other things
      */
@@ -3135,6 +3140,16 @@ EOT;
             'iccProfileName' => basename($iccProfilePath),
             'colorComponentsCount' => '3',
         ]);
+    }
+
+    /**
+     * Enable PDF/UA compliance mode
+     */
+    public function enablePdfUACompliance()
+    {
+        $this->pdfua = true;
+
+        // Enable PDF/UA specific features
     }
 
     public function setAdditionalXmpRdf(string $xmlRDFContents): void

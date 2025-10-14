@@ -28,9 +28,11 @@ class AccessibleTCPDF extends TCPDF
      * @param boolean $diskcache Enable disk caching
      * @param boolean $pdfa Enable PDF/A mode 
      */
-    public function __construct($orientation='P', $unit='mm', $format='A4', $unicode=true, $encoding='UTF-8', $diskcache=false, $pdfa=false) 
+    public function __construct($orientation='P', $unit='mm', $format='A4', $unicode=true, $encoding='UTF-8', $diskcache=false, $pdfa=false, $pdfua=true) 
     {
         parent::__construct($orientation, $unit, $format, $unicode, $encoding, $diskcache, $pdfa);
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "AccessibleTCPDF initialized");
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "PDF/UA support " . ($pdfua ? "enabled" : "disabled"));
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "PDF/A support " . ($pdfa ? "enabled" : "disabled"));
     }
 }

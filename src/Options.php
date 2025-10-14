@@ -235,6 +235,17 @@ class Options
     private $isPdfAEnabled = false;
 
     /**
+     * Enable PDF/UA compliance mode
+     *
+     * ==== EXPERIMENTAL ====
+     * This feature is currently only supported with the TCPDF backend and will
+     * have no effect if used with any other.
+     *
+     * @var bool
+     */
+    private $isPdfUaEnabled = false;
+
+    /**
      * Enable inline JavaScript
      *
      * If this setting is set to true then DOMPDF will automatically insert
@@ -430,6 +441,8 @@ class Options
                 $this->setAllowedRemoteHosts($value);
             } elseif ($key === 'isPdfAEnabled' || $key === 'is_pdf_a_enabled' || $key === 'enable_pdf_a') {
                 $this->setIsPdfAEnabled($value);
+            } elseif ($key === 'isPdfUaEnabled' || $key === 'is_pdf_ua_enabled' || $key === 'enable_pdf_ua') {
+                $this->setIsPdfUaEnabled($value);
             } elseif ($key === 'isJavascriptEnabled' || $key === 'is_javascript_enabled' || $key === 'enable_javascript') {
                 $this->setIsJavascriptEnabled($value);
             } elseif ($key === 'isHtml5ParserEnabled' || $key === 'is_html5_parser_enabled' || $key === 'enable_html5_parser') {
@@ -504,7 +517,9 @@ class Options
         } elseif ($key === 'allowedRemoteHosts' || $key === 'allowed_remote_hosts') {
             return $this->getAllowedProtocols();
         } elseif ($key === 'isPdfAEnabled' || $key === 'is_pdf_a_enabled' || $key === 'enable_pdf_a') {
-            $this->getIsPdfAEnabled();
+            return $this->getIsPdfAEnabled();
+        } elseif ($key === 'isPdfUaEnabled' || $key === 'is_pdf_ua_enabled' || $key === 'enable_pdf_ua') {
+            return $this->getIsPdfUaEnabled();
         } elseif ($key === 'isJavascriptEnabled' || $key === 'is_javascript_enabled' || $key === 'enable_javascript') {
             return $this->getIsJavascriptEnabled();
         } elseif ($key === 'isHtml5ParserEnabled' || $key === 'is_html5_parser_enabled' || $key === 'enable_html5_parser') {
@@ -1174,6 +1189,32 @@ class Options
     public function isPdfAEnabled()
     {
         return $this->getIsPdfAEnabled();
+    }
+
+    /**
+     * @param boolean $isPdfUaEnabled
+     * @return $this
+     */
+    public function setIsPdfUaEnabled($isPdfUaEnabled)
+    {
+        $this->isPdfUaEnabled = $isPdfUaEnabled;
+        return $this;
+    }
+
+    /**
+     * @return boolean
+     */
+    public function getIsPdfUaEnabled()
+    {
+        return $this->isPdfUaEnabled;
+    }
+
+    /**
+     * @return boolean
+     */
+    public function isPdfUaEnabled()
+    {
+        return $this->getIsPdfUaEnabled();
     }
 
     /**

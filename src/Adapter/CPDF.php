@@ -192,6 +192,15 @@ class CPDF implements Canvas
         if ($this->_dompdf->getOptions()->isPdfAEnabled()) {
             $this->_pdf->enablePdfACompliance();
         }
+        
+        /** Future Implementation - PDF/UA */
+        if ($this->_dompdf->getOptions()->isPdfUaEnabled()) {
+            $this->_pdf->enablePdfUACompliance();
+        }        
+
+        SimpleLogger::log("cpdf_adapter_logs", __METHOD__, "PDF/UA support " . ($this->_pdf->pdfua ? "enabled" : "disabled"));
+        SimpleLogger::log("cpdf_adapter_logs", __METHOD__, "PDF/A support " . ($this->_pdf->pdfa ? "enabled" : "disabled"));
+
 
         $this->_width = $size[2] - $size[0];
         $this->_height = $size[3] - $size[1];
