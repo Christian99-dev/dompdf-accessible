@@ -484,4 +484,50 @@ interface Canvas
      * @return string
      */
     function output($options = []);
+
+
+    // -- Semantic methods -- All provided by CanvasSemanticTrait.php 
+    // -- no implementation needed -- only use the trait
+    /**
+     * Store semantic information for an element that will be rendered
+     * 
+     * @param string $elementId Unique identifier for the element (e.g., frame ID)
+     * @param array $semanticData Semantic information (tag, attributes, etc.)
+     */
+    function registerSemanticElement(string $elementId, array $semanticData): void;
+
+    /**
+     * Get semantic information for an element
+     * 
+     * @param string $elementId The element identifier
+     * @return array|null The semantic data or null if not found
+     */
+    function getSemanticElement(string $elementId): ?array;
+
+    /**
+     * Get all registered semantic elements
+     * 
+     * @return array<string, array> All semantic elements
+     */
+    function getAllSemanticElements(): array;
+
+    /**
+     * Check if a semantic element is registered
+     * 
+     * @param string $elementId The element identifier
+     * @return bool
+     */
+    function hasSemanticElement(string $elementId): bool;
+
+    /**
+     * Get count of registered semantic elements
+     * 
+     * @return int
+     */
+    function getSemanticElementCount(): int;
+
+    /**
+     * Clear all semantic elements
+     */
+    function clearSemanticElements(): void;
 }

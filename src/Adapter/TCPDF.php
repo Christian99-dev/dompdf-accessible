@@ -8,6 +8,7 @@
 namespace Dompdf\Adapter;
 
 use Dompdf\Canvas;
+use Dompdf\CanvasSemanticTrait;
 use Dompdf\Dompdf;
 use Dompdf\FontMetrics;
 use Dompdf\SimpleLogger;
@@ -26,6 +27,7 @@ use AccessibleTCPDF;
  */
 class TCPDF implements Canvas
 {
+    use CanvasSemanticTrait;
     /**
      * Dimensions of paper sizes in points
      *

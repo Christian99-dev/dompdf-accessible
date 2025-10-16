@@ -60,21 +60,26 @@ class Renderer extends AbstractRenderer
 
         $this->_check_callbacks("begin_frame", $frame);
 
-        // Safe attribute extraction ()
+        // Extract semantic information from frame and register it
         $node = $frame->get_node();
-        $allAttrs = [];
-        if ($node->hasAttributes()) {
-            /** @var \DOMAttr $attr */
-            foreach ($node->attributes as $attr) {
-                $allAttrs[$attr->name] = $attr->value;
-            }
+        $elementId = 'frame_' . $frame->get_id();
+        
+        $semanticData = [
+            'tag' => $node->nodeName,
+            'attributes' => [],
+            'frame_id' => $frame->get_id(),
+            'display' => $frame->get_style()->display,
+        ];
 
-            SimpleLogger::log(
-                "renderer_logs",
-                __FUNCTION__,
-                "Rendering " . $node->nodeName . "\n" . json_encode($allAttrs, JSON_PRETTY_PRINT)
-            );
+        // Collect all attributes
+        if ($node->hasAttributes()) {
+            foreach ($node->attributes as $attr) {
+                $semanticData['attributes'][$attr->name] = $attr->value;
+            }
         }
+
+        // Register in canvas - works for ANY Canvas implementation!
+        $this->_canvas->registerSemanticElement($elementId, $semanticData);
 
         if ($_dompdf_debug) {
             echo $frame;

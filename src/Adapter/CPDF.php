@@ -9,6 +9,7 @@
 namespace Dompdf\Adapter;
 
 use Dompdf\Canvas;
+use Dompdf\CanvasSemanticTrait;
 use Dompdf\Dompdf;
 use Dompdf\Exception;
 use Dompdf\FontMetrics;
@@ -34,6 +35,7 @@ use FontLib\Exception\FontNotFoundException;
  */
 class CPDF implements Canvas
 {
+    use CanvasSemanticTrait;
 
     /**
      * Dimensions of paper sizes in points
