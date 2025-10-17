@@ -174,9 +174,10 @@ class TCPDF implements Canvas
             true, 
             'UTF-8', 
             false,
-            $this->_dompdf->getOptions()->isPDFAEnabled(),
-            $this->_dompdf->getOptions()->isPDFUAEnabled()
-        );
+            $this->_dompdf->getOptions()->isPDFAEnabled(),     
+            $this->_dompdf->getOptions()->isPDFUAEnabled(),
+            $this->_semantic_elements
+        ); 
 
         // Set document information
         $this->_pdf->SetCreator(sprintf("%s + TCPDF", $this->_dompdf->version ?? 'dompdf'));
