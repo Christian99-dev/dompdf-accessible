@@ -497,4 +497,16 @@ interface Canvas
      */
     public function registerSemanticElement(SemanticElement $semanticElement);
 
+    /**
+     * Set the current frame ID being rendered
+     * 
+     * This is a tunnel method that forwards the frame ID to the backend.
+     * The backend (e.g., AccessibleTCPDF) is responsible for managing the current frame ID.
+     * 
+     * ! no implementation needed -- only use the trait in the canvas implementation
+     * 
+     * @param string|null $frameId The frame ID (e.g., "3", "4", "5") or null to clear
+     */
+    public function setCurrentFrameId(?string $frameId): void;
+
 }

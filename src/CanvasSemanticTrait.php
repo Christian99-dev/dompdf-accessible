@@ -55,4 +55,18 @@ trait CanvasSemanticTrait
             )
         );  
     }
+
+    /**
+     * Set current frame ID - TUNNEL to backend
+     * This method forwards the frame ID directly to AccessibleTCPDF
+     * 
+     * @param string|null $frameId The frame ID being rendered
+     */
+    public function setCurrentFrameId(?string $frameId): void
+    {
+        // Direct tunnel to backends, wich implement this mehtod
+        if (method_exists($this->_pdf, 'setCurrentFrameId')) {
+            $this->_pdf->setCurrentFrameId($frameId);
+        }
+    }
 }

@@ -59,6 +59,9 @@ class Renderer extends AbstractRenderer
 
         $this->_check_callbacks("begin_frame", $frame);
 
+        // NEW: Set current frame ID so backend knows which element is being rendered
+        $this->_canvas->setCurrentFrameId((string) $frame->get_id());
+
         if ($_dompdf_debug) {
             echo $frame;
             flush();
@@ -216,6 +219,9 @@ class Renderer extends AbstractRenderer
         if ($hasTransform) {
             $this->_canvas->restore();
         }
+
+        // NEW: Clear frame ID after rendering is done
+        $this->_canvas->setCurrentFrameId(null);
 
         // Check for end frame callback
         $this->_check_callbacks("end_frame", $frame);

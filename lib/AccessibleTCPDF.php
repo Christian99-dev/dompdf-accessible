@@ -6,6 +6,7 @@
  */
 
 use Dompdf\SimpleLogger;
+use Dompdf\SemanticElement;
 
 require_once __DIR__ . '/../lib/tcpdf/tcpdf.php';
 
@@ -20,9 +21,15 @@ class AccessibleTCPDF extends TCPDF
     /**
      * Reference to semantic elements storage from Canvas
      * This is a direct reference to the $_semantic_elements array from CanvasSemanticTrait
-     * @var SemanticElement[]
+     * @var SemanticElement[]|null
      */
-    private array $semanticElementsRef;
+    private ?array $semanticElementsRef = null;
+    
+    /**
+     * Current frame ID being rendered
+     * @var string|null
+     */
+    private ?string $currentFrameId = null;
 
     /**
      * Constructor
@@ -67,5 +74,56 @@ class AccessibleTCPDF extends TCPDF
         } else {
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "No semantic elements reference provided");
         }
+    }
+    
+    /**
+     * Set the current frame ID being rendered
+     * 
+     * @param string|null $frameId The frame ID
+     */
+    public function setCurrentFrameId(?string $frameId): void
+    {
+        $this->currentFrameId = $frameId;
+        
+        if ($frameId !== null) {
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                sprintf("Current frame ID set to: %s", $frameId)
+            );
+        }
+    }
+    
+    /**
+     * Get the current semantic element being rendered
+     * 
+     * @return SemanticElement|null
+     */
+    private function getCurrentSemanticElement(): ?SemanticElement
+    {
+        if ($this->semanticElementsRef === null || $this->currentFrameId === null) {
+            return null;
+        }
+        
+        return $this->semanticElementsRef[$this->currentFrameId] ?? null;
+    }
+
+    /**
+     * Override Text() to log semantic information
+     */
+    public function Text($x, $y, $txt, $fstroke = false, $fclip = false, $ffill = true, $border = 0, $ln = 0, $align = '', $fill = false, $link = '', $stretch = 0, $ignore_min_height = false, $calign = 'T', $valign = 'M', $rtloff = false)
+    {
+        // Get current semantic element
+        $semantic = $this->getCurrentSemanticElement();
+        
+        // Log it
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+            sprintf(
+                "Text: \"%s\" | Semantic: %s",
+                substr($txt, 0, 50) . (strlen($txt) > 50 ? '...' : ''),
+                $semantic ? (string)$semantic : 'NONE'
+            )
+        );
+        
+        // Call parent to actually render
+        return parent::Text($x, $y, $txt, $fstroke, $fclip, $ffill, $border, $ln, $align, $fill, $link, $stretch, $ignore_min_height, $calign, $valign, $rtloff);
     }
 }
