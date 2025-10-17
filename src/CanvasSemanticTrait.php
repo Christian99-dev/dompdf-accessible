@@ -26,22 +26,11 @@ trait CanvasSemanticTrait
 {
     /**
      * Storage for semantic information
-     * Maps element IDs to their semantic data
+     * Maps element IDs to their SemanticElement objects
      * 
-     * Structure:
-     * [
-     *   'frame_123' => [
-     *     'tag' => 'h1',
-     *     'attributes' => ['id' => 'title', 'class' => 'main'],
-     *     'frame_id' => 123,
-     *     'display' => 'block',
-     *   ],
-     *   ...
-     * ]
-     * 
-     * @var array<string, array>
+     * @var SemanticElement[]
      */
-    protected $_semantic_elements = [];
+    protected array $_semantic_elements = [];
     
     /**
      * Register semantic information for an element
@@ -50,26 +39,20 @@ trait CanvasSemanticTrait
      * rendering or post-processing (e.g., for PDF/UA tagging).
      * 
      * @param string $elementId Unique identifier for the element (e.g., "frame_123")
-     * @param array $semanticData Semantic information with keys:
-     *                            - 'tag': string (HTML tag name, e.g., 'h1', 'p', 'img')
-     *                            - 'attributes': array (HTML attributes, e.g., ['id' => 'foo', 'class' => 'bar'])
-     *                            - 'frame_id': int (Dompdf Frame ID)
-     *                            - 'display': string (CSS display value, e.g., 'block', 'inline')
-     *                            - Additional custom keys as needed
+     * @param SemanticElement|array $semanticData Either a SemanticElement object or legacy array format
      */
-    public function registerSemanticElement(string $elementId, array $semanticData): void
+    public function registerSemanticElement(SemanticElement $semanticElement): void
     {
-        $this->_semantic_elements[$elementId] = $semanticData;
+        $this->_semantic_elements[$semanticElement->id] = $semanticElement;
         
         SimpleLogger::log(
             "canvas_semantic_trait_logs",
-            __METHOD__,
+            "registerSemanticElement()",
             sprintf(
-                "Registered: %s | Tag: %s | Attrs: %s",
-                $elementId,
-                $semanticData['tag'] ?? 'unknown',
-                json_encode($semanticData['attributes'] ?? [])
+                "Registered: %s | %s",
+                $semanticElement->id,
+                $semanticElement
             )
-        );
+        );  
     }
 }

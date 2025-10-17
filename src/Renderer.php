@@ -60,26 +60,29 @@ class Renderer extends AbstractRenderer
 
         $this->_check_callbacks("begin_frame", $frame);
 
-        // Extract semantic information from frame and register it
+        // Extract semantic information from frame and create SemanticElement
         $node = $frame->get_node();
-        $elementId = 'frame_' . $frame->get_id();
+        $elementId = $frame->get_id();
         
-        $semanticData = [
-            'tag' => $node->nodeName,
-            'attributes' => [],
-            'frame_id' => $frame->get_id(),
-            'display' => $frame->get_style()->display,
-        ];
-
         // Collect all attributes
+        $attributes = [];
         if ($node->hasAttributes()) {
             foreach ($node->attributes as $attr) {
-                $semanticData['attributes'][$attr->name] = $attr->value;
+                $attributes[$attr->name] = $attr->value;
             }
         }
-
+        
+        // Create SemanticElement object
+        $semanticElement = new SemanticElement(
+            $elementId,
+            $node->nodeName,
+            $attributes,
+            $frame->get_id(),
+            $frame->get_style()->display
+        );
+        
         // Register in canvas - works for ANY Canvas implementation!
-        $this->_canvas->registerSemanticElement($elementId, $semanticData);
+        $this->_canvas->registerSemanticElement($semanticElement);
 
         if ($_dompdf_debug) {
             echo $frame;

@@ -485,14 +485,16 @@ interface Canvas
      */
     function output($options = []);
 
-
-    // -- Semantic method -- All provided by CanvasSemanticTrait.php
-    // -- no implementation needed -- only use the trait in the canvas implementation
     /**
-     * Store semantic information for an element that will be rendered
+     * Register semantic information for an element
      * 
-     * @param string $elementId Unique identifier for the element (e.g., frame ID)
-     * @param array $semanticData Semantic information (tag, attributes, etc.)
+     * This method stores semantic data that can later be accessed during
+     * rendering or post-processing (e.g., for PDF/UA tagging).
+     * 
+     * ! no implementation needed -- only use the trait in the canvas implementation
+     * 
+     * @param SemanticElement $semanticElement The semantic element to register
      */
-    function registerSemanticElement(string $elementId, array $semanticData): void;
+    public function registerSemanticElement(SemanticElement $semanticElement);
+
 }
