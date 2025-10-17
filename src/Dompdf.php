@@ -816,17 +816,16 @@ class Dompdf
         $root->set_containing_block(0, 0, $canvas->get_width(), $canvas->get_height());
         $root->set_renderer(new Renderer($this));
 
-        // beacause of perfomace reasons the frametree is wiped after the reflow proccess
-        // so to inspect the frametree use the callbacks wich give us information about the tree
-        SimpleLogger::setupFrameTreeCallback($this, "frametree_logs");
+        // NEW: Register all semantic elements BEFORE rendering starts
+        // Get the root frame from the FrameTree
+        $rootFrame = $this->tree->get_root();
+        if ($rootFrame !== null) {
+            $this->_registerAllSemanticElements($rootFrame);
+        }
 
-        SimpleLogger::log("frametree_logs","render", "Reflow started > ");
-        SimpleLogger::logFrameTree("frametree_logs", "render_before_reflow", $root);
         // This is where the magic happens:
         $root->reflow();
-        SimpleLogger::log("frametree_logs","render", "Reflow finished < ");
 
-        
 
 
         if (isset($this->callbacks["end_document"])) {
@@ -862,6 +861,78 @@ class Dompdf
         }
 
         $this->restorePhpConfig();
+    }
+
+
+       /**
+     * Walk through the entire frame tree and register all semantic elements
+     * This happens BEFORE rendering, so all elements are available when rendering starts
+     * 
+     * @param Frame $frame The root frame to start from
+     */
+    private function _registerAllSemanticElements(Frame $frame): void
+    {
+        $registeredCount = 0;
+        
+        SimpleLogger::log(
+            "dompdf_logs",
+            __METHOD__,
+            "=== Starting semantic element registration for entire frame tree ==="
+        );
+        
+        // Recursive function to walk the tree
+        $walkTree = function(Frame $frame) use (&$walkTree, &$registeredCount) {
+            $node = $frame->get_node();
+            
+            // Skip text nodes without actual content
+            if ($node->nodeType === XML_TEXT_NODE && trim($node->nodeValue) === '') {
+                // Continue with children
+                foreach ($frame->get_children() as $child) {
+                    $walkTree($child);
+                }
+                return;
+            }
+            
+            $elementId = $frame->get_id();
+            
+            // Collect all attributes
+            $attributes = [];
+            if ($node->hasAttributes()) {
+                foreach ($node->attributes as $attr) {
+                    $attributes[$attr->name] = $attr->value;
+                }
+            }
+            
+            // Create SemanticElement object
+            $semanticElement = new SemanticElement(
+                $elementId,
+                $node->nodeName,
+                $attributes,
+                $frame->get_id(),
+                $frame->get_style()->display
+            );
+            
+            // Register in canvas
+            $this->canvas->registerSemanticElement($semanticElement);
+            $registeredCount++;
+            
+            // Continue with children
+            foreach ($frame->get_children() as $child) {
+                $walkTree($child);
+            }
+        };
+        
+        // Start the tree walk from root
+        $walkTree($frame);
+        
+        SimpleLogger::log(
+            "dompdf_semantic",
+            __METHOD__,
+            sprintf(
+                "=== Semantic registration complete: %d elements registered ===",
+                $registeredCount
+            )
+        );
     }
 
     /**

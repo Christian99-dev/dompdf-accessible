@@ -15,7 +15,6 @@ use Dompdf\Renderer\TableCell;
 use Dompdf\Renderer\TableRow;
 use Dompdf\Renderer\TableRowGroup;
 use Dompdf\Renderer\Text;
-use Dompdf\SimpleLogger; // Added for detailed frame/node logging
 
 /**
  * Concrete renderer
@@ -59,30 +58,6 @@ class Renderer extends AbstractRenderer
         global $_dompdf_debug;
 
         $this->_check_callbacks("begin_frame", $frame);
-
-        // Extract semantic information from frame and create SemanticElement
-        $node = $frame->get_node();
-        $elementId = $frame->get_id();
-        
-        // Collect all attributes
-        $attributes = [];
-        if ($node->hasAttributes()) {
-            foreach ($node->attributes as $attr) {
-                $attributes[$attr->name] = $attr->value;
-            }
-        }
-        
-        // Create SemanticElement object
-        $semanticElement = new SemanticElement(
-            $elementId,
-            $node->nodeName,
-            $attributes,
-            $frame->get_id(),
-            $frame->get_style()->display
-        );
-        
-        // Register in canvas - works for ANY Canvas implementation!
-        $this->_canvas->registerSemanticElement($semanticElement);
 
         if ($_dompdf_debug) {
             echo $frame;
