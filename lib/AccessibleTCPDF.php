@@ -212,7 +212,8 @@ class AccessibleTCPDF extends TCPDF
     // ---------------------------- 
     // --- TCPDF Core Override  --- 
     // ----------------------------
-/**
+    
+    /**
      * All following methods override TCPDF to inject PDF/UA accessibility features.
      * 
      * IMPORTANT: Semantic elements can be NULL
