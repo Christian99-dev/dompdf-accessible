@@ -125,11 +125,17 @@ class AccessibleTCPDF extends TCPDF
      */
     private function _getCurrentSemanticElement(): ?SemanticElement
     {
+        // If no semantic elements or no current frame, return null
         if ($this->semanticElementsRef === null || $this->currentFrameId === null) {
             return null;
         }
+
+        // Frames die während Reflow erstellt werden, sind nicht registriert
+        if (!isset($this->semanticElementsRef[$this->currentFrameId])) {
+            return null;  // Das ist OK - diese Frames erben den Kontext vom Parent
+        }
         
-        return $this->semanticElementsRef[$this->currentFrameId] ?? null;
+        return $this->semanticElementsRef[$this->currentFrameId];
     }
 
     // ------------------------- 
@@ -206,19 +212,36 @@ class AccessibleTCPDF extends TCPDF
     // ---------------------------- 
     // --- TCPDF Core Override  --- 
     // ----------------------------
-    // All following methods override TCPDF methods to inject accessibility features.
-    // PLease put a if($this->pdfua !== true) return parent::Text(....) to bypass when not in PDF/UA mode.
-    
+/**
+     * All following methods override TCPDF to inject PDF/UA accessibility features.
+     * 
+     * IMPORTANT: Semantic elements can be NULL
+     * -----------------------------------------
+     * Dompdf creates additional frames DURING reflow (after semantic registration):
+     * - Line-break frames when text wraps
+     * - Anonymous inline boxes for whitespace
+     * - Page-break frames
+     * 
+     * These auto-generated frames are NOT in the semantic registry. This is correct:
+     * they inherit the accessibility context from their parent frame automatically.
+     * 
+     * Example: "Very long heading" splits into Frame 4 + Frame 66
+     * - Frame 4: Opens /H1 tag → renders "Very long heading"  
+     * - Frame 66: NULL semantic → renders "that wraps" (inherits /H1 from parent)
+     * - Frame 4: Closes /H1 tag
+     * 
+     * Always check: if($this->pdfua !== true || $semantic === null) bypass to parent
+     */
 
     /**
      * Override Text() to add PDF tagging for accessibility
      */
     public function Text($x, $y, $txt, $fstroke = false, $fclip = false, $ffill = true, $border = 0, $ln = 0, $align = '', $fill = false, $link = '', $stretch = 0, $ignore_min_height = false, $calign = 'T', $valign = 'M', $rtloff = false)
     {
-        if($this->pdfua !== true) return parent::Text($x, $y, $txt, $fstroke, $fclip, $ffill, $border, $ln, $align, $fill, $link, $stretch, $ignore_min_height, $calign, $valign, $rtloff);
-        
         // Get current semantic element
         $semantic = $this->_getCurrentSemanticElement();
+        
+        if($this->pdfua !== true || $semantic === null) return parent::Text($x, $y, $txt, $fstroke, $fclip, $ffill, $border, $ln, $align, $fill, $link, $stretch, $ignore_min_height, $calign, $valign, $rtloff);
         
         // Log it
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 

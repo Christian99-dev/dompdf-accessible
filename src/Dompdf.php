@@ -884,15 +884,6 @@ class Dompdf
         $walkTree = function(Frame $frame) use (&$walkTree, &$registeredCount) {
             $node = $frame->get_node();
             
-            // Skip text nodes without actual content
-            if ($node->nodeType === XML_TEXT_NODE && trim($node->nodeValue) === '') {
-                // Continue with children
-                foreach ($frame->get_children() as $child) {
-                    $walkTree($child);
-                }
-                return;
-            }
-            
             $elementId = $frame->get_id();
             
             // Collect all attributes
