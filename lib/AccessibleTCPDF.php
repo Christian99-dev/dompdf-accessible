@@ -110,6 +110,14 @@ class AccessibleTCPDF extends TCPDF
     private ?array $activeBDCFrame = null;
 
     /**
+     * Track BDC/EMC nesting depth
+     * Incremented on BDC, decremented on EMC
+     * Used to prevent wrapping graphics ops as Artifacts when inside tagged content
+     * @var int
+     */
+    private int $bdcDepth = 0;
+
+    /**
      * Constructor
      * 
      * @param string $orientation Page orientation (P or L)
@@ -138,9 +146,11 @@ class AccessibleTCPDF extends TCPDF
 
         if($pdfua && $semanticElementsRef !== null) {
             $this->pdfua = true;
-            // Disable TCPDF default footer for PDF/UA compliance
-            // The footer "Powered by TCPDF" is not tagged and causes validation errors
-            $this->print_footer = false;
+
+            // CRITICAL: Disable "Powered by TCPDF" link (separate from footer!)
+            // This is rendered in Close() method independent of Footer() mechanism
+            // The extra Q operator after the link causes PDF/UA validation errors
+            $this->tcpdflink = false;
         }
 
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "AccessibleTCPDF initialized");
@@ -307,6 +317,9 @@ class AccessibleTCPDF extends TCPDF
         // _out() doesn't work properly within text rendering context
         $this->_injectIntoPageBuffer($command . "\n");
         
+        // Track BDC depth for graphics-state wrapping logic
+        $this->bdcDepth++;
+        
         // Track in structure tree
         $this->structureTree[] = [
             'tag' => $tag,
@@ -325,6 +338,9 @@ class AccessibleTCPDF extends TCPDF
         
         // CRITICAL FIX: Inject directly into page buffer
         $this->_injectIntoPageBuffer("EMC\n");
+        
+        // Track BDC depth
+        $this->bdcDepth--;
     }
     
     /**
@@ -502,16 +518,15 @@ class AccessibleTCPDF extends TCPDF
                 $out .= ' /S /' . $struct['tag'];
                 $out .= sprintf(' /P %d 0 R', $documentObjId);  // Use CALCULATED Document ID!
                 
-                // Use MCR (Marked Content Reference)
-                $out .= ' /K << /Type /MCR';
-                
-                // Add page reference to MCR
+                // CRITICAL: For page content, use SIMPLE INTEGER /K + /Pg
+                // NOT MCR dictionary! MCR is for XObjects.
+                // Add page reference - REQUIRED when /K is integer!
                 if (isset($this->savedPageObjIds[$pageNum])) {
                     $out .= sprintf(' /Pg %d 0 R', $this->savedPageObjIds[$pageNum]);
                 }
                 
-                $out .= ' /MCID ' . $struct['mcid'];
-                $out .= ' >>';
+                // Use simple integer MCID
+                $out .= ' /K ' . $struct['mcid'];
                 
                 // Add alt text for images
                 if ($struct['semantic']->isImage() && $struct['semantic']->hasAltText()) {
@@ -604,7 +619,9 @@ class AccessibleTCPDF extends TCPDF
         $out = '<<';
         $out .= ' /Type /StructElem';
         $out .= ' /S /Document';
-        // NO /P (Parent) - Adobe requires Document to be the visible root without parent
+        // CRITICAL FIX: PDF/UA Rule 7.1 requires ALL StructElems have /P (Parent)
+        // Document's parent is the StructTreeRoot
+        $out .= sprintf(' /P %d 0 R', $structTreeRootObjId);
         $out .= ' /K [' . implode(' 0 R ', $allStructElemObjIds) . ' 0 R]';  // Include Links!
         $out .= ' >>';
         $out .= "\n".'endobj';
@@ -666,22 +683,73 @@ class AccessibleTCPDF extends TCPDF
     // ========================================================================
     
     /**
-     * Override setFontSize to wrap empty font operations as Artifacts
-     * PDF/UA requires all content to be either tagged or marked as Artifact
+     * Override setFontSize to suppress font operations in PDF/UA mode
+     * 
+     * CRITICAL: We inject Tf (font selection) directly in getCellCode() BT...ET blocks.
+     * All standalone font operations outside BDC create unnecessary Artifact blocks.
+     * 
+     * SOLUTION: Suppress ALL font output in PDF/UA mode.
+     * Parent calculations still happen (font properties set in memory).
+     * Actual Tf output happens in getCellCode() where we inject it into BT...ET.
      * 
      * @param float $size The font size in points
-     * @param boolean $out if true output the font size command, otherwise only set the font properties
+     * @param boolean $out if true output the font size command
      * @public
      */
     public function setFontSize($size, $out=true) {
-        // Let parent handle all calculations, but suppress output in PDF/UA mode
+        // In PDF/UA mode: suppress ALL font output (we inject Tf in getCellCode instead)
         parent::setFontSize($size, $this->pdfua ? false : $out);
+    }
+
+    /**
+     * Override endPage to wrap final page graphics operations as Artifact
+     * 
+     * CRITICAL FIX for content[65] validation error:
+     * TCPDF outputs graphics state reset operations at page end (after last content).
+     * These appear AFTER the final EMC but BEFORE endstream, causing "untagged content" errors.
+     * 
+     * SOLUTION: We can't wrap this because parent::endPage() closes the page buffer.
+     * Instead, we'll catch this in _endpage() override.
+     * 
+     * @param boolean $tocpage if true set the tocpage state to false
+     * @public
+     */
+    public function endPage($tocpage=false) {
+        // Just call parent - we handle artifacts in _endpage() override
+        parent::endPage($tocpage);
+    }
+    
+    /**
+     * Override _endpage to wrap final graphics operations before page closes
+     * 
+     * This is called by endPage() BEFORE state changes to 1.
+     * Perfect place to inject final Artifact wrapper.
+     * 
+     * @protected
+     */
+    protected function _endpage() {
+        // PDF/UA FIX: Close any open BDC block BEFORE wrapping page-end graphics
+        if ($this->pdfua && $this->activeBDCFrame !== null && $this->page > 0 && $this->state == 2) {
+            $this->_out("\nEMC");  // Close the last content BDC (with leading newline)
+            $this->bdcDepth--;
+            $this->activeBDCFrame = null;
+        }
         
-        // PDF/UA FIX: Output font command wrapped as Artifact to prevent untagged content
-        if ($this->pdfua && $out && ($this->page > 0) && (isset($this->CurrentFont['i'])) && ($this->state == 2)) {
-            $this->_out('/Artifact BMC');
-            $this->_out(sprintf('BT /F%d %F Tf ET', $this->CurrentFont['i'], $this->FontSizePt));
-            $this->_out('EMC');
+        // PDF/UA FIX: Wrap any remaining page content as Artifact
+        if ($this->pdfua && $this->page > 0 && $this->state == 2) {
+            $this->_out("\n/Artifact BMC");  // Leading newline to separate from previous content
+        }
+        
+        // Call parent (sets state = 1)
+        parent::_endpage();
+        
+        // PDF/UA FIX: Close Artifact after state change
+        // We need to manually output EMC because state is now 1
+        if ($this->pdfua && $this->page > 0) {
+            // Manually append to page buffer since state is already 1
+            if (isset($this->pages[$this->page])) {
+                $this->pages[$this->page] .= "EMC\n";
+            }
         }
     }
 
@@ -692,24 +760,198 @@ class AccessibleTCPDF extends TCPDF
      * Graphics-state operations (line width, cap, join, dash, colors) are decorative
      * and must be marked as Artifacts to prevent "untagged content" validation errors.
      * 
-     * CRITICAL: Only wrap if we're NOT already inside a tagged content block!
-     * If activeBDCFrame is set, we're inside /H1 or /P tags and shouldn't add nested Artifacts.
+     * CRITICAL: Do NOT create nested Artifacts inside BDC blocks!
+     * Only wrap as Artifact when OUTSIDE tagged content ($bdcDepth == 0).
      * 
      * @param array $gvars Array of graphic variables
      * @param boolean $extended If true restore extended graphic variables
      * @protected
      */
     protected function setGraphicVars($gvars, $extended=false) {
-        // Only wrap if PDF/UA mode AND we're NOT inside a tagged content block
-        if ($this->pdfua && $this->page > 0 && $this->state == 2 && $this->activeBDCFrame === null) {
+        // Only wrap as Artifact when OUTSIDE BDC blocks
+        // State >= 1 allows wrapping during page end (state=1) and normal rendering (state=2)
+        if ($this->pdfua && $this->page > 0 && $this->state >= 1 && $this->bdcDepth == 0) {
             // Wrap graphics-state output as Artifact
             $this->_out('/Artifact BMC');
             parent::setGraphicVars($gvars, $extended);
             $this->_out('EMC');
         } else {
-            // Normal mode OR inside tagged content - just call parent without wrapping
+            // Normal mode OR inside BDC - just call parent without wrapping
             parent::setGraphicVars($gvars, $extended);
         }
+    }
+
+    /**
+     * Override setExtGState to wrap ExtGState operations as Artifacts
+     * PDF/UA requires all content to be either tagged or marked as Artifact
+     * 
+     * ExtGState operations (/GS1 gs, /GS2 gs, etc.) control transparency and blending.
+     * 
+     * CRITICAL: veraPDF does NOT allow nested Artifacts OR untagged content inside BDC blocks!
+     * We SUPPRESS setExtGState() when inside tagged content ($bdcDepth > 0).
+     * This prevents untagged /GS1 gs operations from appearing in BDC blocks.
+     * 
+     * TRADE-OFF: Transparency may not work correctly for tagged content.
+     * This is acceptable for PDF/UA compliance as transparency is primarily visual.
+     * 
+     * @param int $gs extgstate identifier
+     * @protected
+     */
+    protected function setExtGState($gs) {
+        // SUPPRESS ExtGState when inside tagged content blocks
+        if ($this->pdfua && $this->bdcDepth > 0) {
+            return; // Suppress ExtGState inside BDC
+        }
+        
+        // Only wrap if PDF/UA mode AND we're OUTSIDE tagged content blocks
+        if ($this->pdfua && $this->page > 0 && $this->state == 2) {
+            $this->_out('/Artifact BMC');
+            parent::setExtGState($gs);
+            $this->_out('EMC');
+        } else {
+            parent::setExtGState($gs);
+        }
+    }
+    
+    /**
+     * Override StartTransform to prevent untagged 'q' operator
+     * CRITICAL: The 'q' (save graphics state) is a graphics-state operator that
+     * must be tagged as Artifact or suppressed when inside BDC blocks!
+     * 
+     * @public
+     */
+    public function StartTransform() {
+        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
+        if ($this->pdfua && ($this->bdcDepth > 0)) {
+            // Track transform matrix but don't output 'q'
+            if ($this->state != 2) {
+                return;
+            }
+            if ($this->inxobj) {
+                $this->xobjects[$this->xobjid]['transfmrk'][] = strlen($this->xobjects[$this->xobjid]['outdata']);
+            } else {
+                $this->transfmrk[$this->page][] = $this->pagelen[$this->page];
+            }
+            ++$this->transfmatrix_key;
+            $this->transfmatrix[$this->transfmatrix_key] = array();
+            return;
+        }
+        
+        parent::StartTransform();
+    }
+    
+    /**
+     * Override StopTransform to prevent untagged 'Q' operator
+     * CRITICAL: The 'Q' (restore graphics state) must be suppressed if the
+     * corresponding 'q' was suppressed!
+     * 
+     * @public
+     */
+    public function StopTransform() {
+        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
+        if ($this->pdfua && ($this->bdcDepth > 0)) {
+            // Restore transform matrix but don't output 'Q'
+            if ($this->state != 2) {
+                return;
+            }
+            if (isset($this->transfmatrix[$this->transfmatrix_key])) {
+                array_pop($this->transfmatrix[$this->transfmatrix_key]);
+                --$this->transfmatrix_key;
+                if (isset($this->transfmrk[$this->page]) AND isset($this->transfmrk[$this->page][$this->transfmatrix_key])) {
+                    $this->transfmrk[$this->page][$this->transfmatrix_key] = strlen($this->pages[$this->page]);
+                } elseif ($this->inxobj) {
+                    if (isset($this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key])) {
+                        $this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key] = strlen($this->xobjects[$this->xobjid]['outdata']);
+                    }
+                }
+            }
+            return;
+        }
+        
+        parent::StopTransform();
+    }
+    
+    /**
+     * Override _outSaveGraphicsState to prevent untagged 'q' operator
+     * CRITICAL: Many TCPDF methods call this directly (not via StartTransform)!
+     * Footer uses this before Cell() calls, which creates untagged 'q' inside BDC!
+     * 
+     * @protected
+     */
+    protected function _outSaveGraphicsState() {
+        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
+        if ($this->pdfua && ($this->bdcDepth > 0)) {
+            return; // Suppress 'q' output
+        }
+        
+        parent::_outSaveGraphicsState();
+    }
+    
+    /**
+     * Override _outRestoreGraphicsState to prevent untagged 'Q' operator
+     * CRITICAL: Must suppress if corresponding 'q' was suppressed!
+     * 
+     * @protected
+     */
+    protected function _outRestoreGraphicsState() {
+        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
+        if ($this->pdfua && ($this->bdcDepth > 0)) {
+            return; // Suppress 'Q' output
+        }
+        
+        parent::_outRestoreGraphicsState();
+    }
+
+    /**
+     * Extract graphics-state line from cellCode
+     * 
+     * CRITICAL: veraPDF treats ANY graphics operation (even empty 'q') as untagged contentItem!
+     * We must extract ALL graphics operations including q/Q.
+     * 
+     * Pattern in TCPDF output:
+     * "0.570000 w 0 J 0 j [] 0 d 0 G 0 g\nq 0.000000 0.000000 0.000000 rg BT 0 Tr 0.000000 w ET BT ... TJ ET Q"
+     * 
+     * We extract EVERYTHING except the actual text rendering "BT ... TJ ET":
+     * 1. "0.570000 w 0 J 0 j [] 0 d 0 G 0 g" → Artifact
+     * 2. "q 0.000000 0.000000 0.000000 rg" → Artifact  
+     * 3. "BT 0 Tr 0.000000 w ET" → Artifact
+     * 4. "Q" → Artifact
+     * 
+     * And keep inside BDC: "BT ... TJ ET" (ONLY the text)
+     * 
+     * @param string $cellCode Original PDF code from parent::getCellCode()
+     * @return array [$graphicsLines, $cleanedCellCode]
+     * @protected
+     */
+    protected function _extractGraphicsOps($cellCode) {
+        $graphicsLines = [];
+        
+        // Extract first line if it's graphics-state
+        $lines = explode("\n", $cellCode, 2);
+        if (count($lines) >= 2 && preg_match('/^[\d\.]+ w [\d]+ J [\d]+ j \[.*?\] [\d]+ d [\d\.]+ G [\d\.]+ g$/', $lines[0])) {
+            $graphicsLines[] = $lines[0];
+            $cellCode = $lines[1];
+        }
+        
+        // Extract "q ...color... BT 0 Tr 0.000000 w ET" and remove q/Q entirely
+        $cellCode = preg_replace_callback(
+            '/q ([^\n]+?)\s+BT (\d+) Tr ([\d\.]+) w ET\s+(.*?)\s+Q/s',
+            function($matches) use (&$graphicsLines) {
+                // Extract ALL graphics operations
+                $graphicsLines[] = 'q ' . $matches[1];  // Graphics state save + color
+                $graphicsLines[] = 'BT ' . $matches[2] . ' Tr ' . $matches[3] . ' w ET';  // Render mode
+                $graphicsLines[] = 'Q';  // Graphics state restore
+                // Return ONLY the text rendering part (without q/Q)
+                return $matches[4];
+            },
+            $cellCode
+        );
+        
+        if (empty($graphicsLines)) {
+            return ['', $cellCode];
+        }
+        
+        return [implode("\n", $graphicsLines), $cellCode];
     }
 
     /**
@@ -721,11 +963,12 @@ class AccessibleTCPDF extends TCPDF
         // CRITICAL: Close any open BDC block before finalizing the document
         if ($this->activeBDCFrame !== null) {
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("Closing final BDC for frame %s", $this->activeBDCFrame['semanticId'])
+                sprintf("Closing final BDC for frame %s (bdcDepth=%d)", $this->activeBDCFrame['semanticId'], $this->bdcDepth)
             );
             // Inject EMC into the current page buffer
             if ($this->state == 2 && isset($this->page)) {
                 $this->setPageBuffer($this->page, "EMC\n", true);
+                $this->bdcDepth--;  // Decrement when closing final BDC
             }
             $this->activeBDCFrame = null;
         }
@@ -773,6 +1016,15 @@ class AccessibleTCPDF extends TCPDF
     {
         // Get parent's annotation refs
         $annots = parent::_getannotsrefs($n);
+        
+        // DEBUG: Always log this
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+            sprintf("Called for page %d | pdfua=%s | structureTree count=%d", 
+                $n, 
+                var_export($this->pdfua, true),
+                count($this->structureTree)
+            )
+        );
         
         // If PDF/UA mode, add /StructParents and /Tabs after annotations
         if ($this->pdfua && !empty($this->structureTree)) {
@@ -1480,6 +1732,19 @@ class AccessibleTCPDF extends TCPDF
         // Get the original cell code from parent
         $cellCode = parent::getCellCode($w, $h, $txt, $border, $ln, $align, $fill, $link, $stretch, $ignore_min_height, $calign, $valign);
         
+        // DEBUG: Log RAW cellCode BEFORE any processing
+        if ($txt === "This") {
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                "=== RAW CELLCODE FOR 'This' (before extraction) ==="
+            );
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                $cellCode
+            );
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                "=== END RAW CELLCODE ==="
+            );
+        }
+        
         // If not PDF/UA mode, return as-is
         if ($this->pdfua !== true) {
             return $cellCode;
@@ -1508,8 +1773,9 @@ class AccessibleTCPDF extends TCPDF
             $result = '';
             if ($this->activeBDCFrame !== null) {
                 $result .= "EMC\n";
+                $this->bdcDepth--;  // Decrement when closing BDC
                 SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("Closed BDC for frame %s before Artifact", $this->activeBDCFrame['semanticId'])
+                    sprintf("Closed BDC for frame %s before Artifact (bdcDepth=%d)", $this->activeBDCFrame['semanticId'], $this->bdcDepth)
                 );
                 $this->activeBDCFrame = null;
             }
@@ -1559,11 +1825,19 @@ class AccessibleTCPDF extends TCPDF
                      $this->activeBDCFrame['semanticId'] === $semanticId);
         
         if ($sameFrame) {
-            // Same frame - just output cell code WITHOUT new BDC/EMC
+            // Same frame - extract graphics line and output as Artifact BEFORE content
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 sprintf("Continuing frame %s (no new BDC)", $semanticId)
             );
-            return $cellCode;
+            
+            // Extract graphics-state line and output as Artifact
+            list($graphicsLine, $cleanedCellCode) = $this->_extractGraphicsOps($cellCode);
+            
+            if (!empty($graphicsLine)) {
+                return "/Artifact BMC\n" . $graphicsLine . "\nEMC\n" . $cleanedCellCode;
+            }
+            
+            return $cleanedCellCode;
         }
         
         // Different frame - close previous BDC (if any) and open new one
@@ -1572,6 +1846,7 @@ class AccessibleTCPDF extends TCPDF
         // Close previous BDC if exists
         if ($this->activeBDCFrame !== null) {
             $result .= "EMC\n";
+            $this->bdcDepth--;  // Decrement depth when closing BDC
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 sprintf("Closed previous BDC for frame %s", $this->activeBDCFrame['semanticId'])
             );
@@ -1579,10 +1854,42 @@ class AccessibleTCPDF extends TCPDF
         
         // Open new BDC for this frame
         $mcid = $this->mcidCounter++;
+        
+        // CRITICAL FIX: Extract graphics-state line from cellCode
+        // and output it as Artifact BEFORE the BDC block
+        list($graphicsLine, $cleanedCellCode) = $this->_extractGraphicsOps($cellCode);
+        
+        // DEBUG: Log extraction results
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+            sprintf("EXTRACTED Graphics: [%s] | Cleaned: [%s]", 
+                str_replace("\n", "\\n", substr($graphicsLine, 0, 100)),
+                str_replace("\n", "\\n", substr($cleanedCellCode, 0, 100))
+            )
+        );
+        
+        // CRITICAL FIX: Inject Tf (font selection) into BT...ET block
+        // veraPDF requires font to be set BEFORE text rendering!
+        // Pattern: "BT ... Td ... TJ ET" → "BT /F3 24.000000 Tf ... Td ... TJ ET"
+        if (isset($this->CurrentFont['i']) && $this->FontSizePt) {
+            $cleanedCellCode = preg_replace(
+                '/^BT\s+/',
+                sprintf('BT /F%d %F Tf ', $this->CurrentFont['i'], $this->FontSizePt),
+                $cleanedCellCode
+            );
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                sprintf("INJECTED Tf: /F%d %F Tf into BT...ET block", $this->CurrentFont['i'], $this->FontSizePt)
+            );
+        }
+        
+        if (!empty($graphicsLine)) {
+            $result .= "/Artifact BMC\n" . $graphicsLine . "\nEMC\n";
+        }
+        
         $result .= sprintf("/%s << /MCID %d >> BDC\n", $pdfTag, $mcid);
+        $this->bdcDepth++;  // Increment depth when opening BDC
         
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("Opened new BDC: %s MCID=%d for frame %s", $pdfTag, $mcid, $semanticId)
+            sprintf("Opened new BDC: %s MCID=%d for frame %s (bdcDepth=%d)", $pdfTag, $mcid, $semanticId, $this->bdcDepth)
         );
         
         // Track this as the active BDC frame
@@ -1602,8 +1909,18 @@ class AccessibleTCPDF extends TCPDF
             'semantic' => $tagElement
         ];
         
-        // Return: [optional EMC] + BDC + cell code (NO closing EMC yet - will close on frame change)
-        return $result . $cellCode;
+        // DEBUG: Log the final return
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+            sprintf("RETURNING: [%s] + cleanedCellCode (WITHOUT trailing EMC - next call will close it)", 
+                str_replace("\n", "\\n", substr($result, 0, 150))
+            )
+        );
+        
+        // Return: [optional EMC for previous BDC] + [graphics ops as Artifact] + BDC + cleaned cell code
+        // NOTE: We do NOT add EMC at the end here! The NEXT getCellCode() call will close this BDC.
+        // The final BDC on a page will be closed by the next getCellCode() call (e.g. footer)
+        // or by TCPDF's page closing mechanism.
+        return $result . $cleanedCellCode;
     }
 
     /*
