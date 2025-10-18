@@ -183,25 +183,6 @@ class AccessibleTCPDF extends TCPDF
     }
     
     /**
-     * Override setFontSize to prevent empty BT/ET blocks in PDF stream
-     * These empty font operations violate PDF/UA requirement that all content must be tagged or marked as Artifact
-     * 
-     * We suppress output during setFontSize() because:
-     * 1. TCPDF's getCellCode() already outputs font commands when rendering text
-     * 2. Empty BT/ET blocks violate PDF/UA (all content must be tagged or Artifact)
-     * 3. Font info is still stored internally for later use
-     * 
-     * @param float $size The font size in points
-     * @param boolean $out if true output the font size command, otherwise only set the font properties
-     * @public
-     */
-    public function setFontSize($size, $out=true) {
-        // Always suppress output - font will be properly set when text is actually rendered in getCellCode()
-        // This prevents ~60 empty BT/Tf/ET blocks that violate PDF/UA
-        parent::setFontSize($size, false);
-    }
-    
-    /**
      * Get the current semantic element being rendered
      * 
      * @return SemanticElement|null
@@ -684,6 +665,26 @@ class AccessibleTCPDF extends TCPDF
     // Always check: if($this->pdfua !== true || $semantic === null) bypass to parent
     // ========================================================================
     
+    /**
+     * Override setFontSize to wrap empty font operations as Artifacts
+     * PDF/UA requires all content to be either tagged or marked as Artifact
+     * 
+     * @param float $size The font size in points
+     * @param boolean $out if true output the font size command, otherwise only set the font properties
+     * @public
+     */
+    public function setFontSize($size, $out=true) {
+        // Let parent handle all calculations, but suppress output in PDF/UA mode
+        parent::setFontSize($size, $this->pdfua ? false : $out);
+        
+        // PDF/UA FIX: Output font command wrapped as Artifact to prevent untagged content
+        if ($this->pdfua && $out && ($this->page > 0) && (isset($this->CurrentFont['i'])) && ($this->state == 2)) {
+            $this->_out('/Artifact BMC');
+            $this->_out(sprintf('BT /F%d %F Tf ET', $this->CurrentFont['i'], $this->FontSizePt));
+            $this->_out('EMC');
+        }
+    }
+
     /**
      * Override _putresources() to output structure tree objects BEFORE catalog
      * This ensures xref table is correctly built
