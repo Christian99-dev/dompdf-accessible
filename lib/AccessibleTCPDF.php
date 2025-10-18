@@ -686,6 +686,33 @@ class AccessibleTCPDF extends TCPDF
     }
 
     /**
+     * Override setGraphicVars to wrap graphics-state operations as Artifacts
+     * PDF/UA requires all content to be either tagged or marked as Artifact
+     * 
+     * Graphics-state operations (line width, cap, join, dash, colors) are decorative
+     * and must be marked as Artifacts to prevent "untagged content" validation errors.
+     * 
+     * CRITICAL: Only wrap if we're NOT already inside a tagged content block!
+     * If activeBDCFrame is set, we're inside /H1 or /P tags and shouldn't add nested Artifacts.
+     * 
+     * @param array $gvars Array of graphic variables
+     * @param boolean $extended If true restore extended graphic variables
+     * @protected
+     */
+    protected function setGraphicVars($gvars, $extended=false) {
+        // Only wrap if PDF/UA mode AND we're NOT inside a tagged content block
+        if ($this->pdfua && $this->page > 0 && $this->state == 2 && $this->activeBDCFrame === null) {
+            // Wrap graphics-state output as Artifact
+            $this->_out('/Artifact BMC');
+            parent::setGraphicVars($gvars, $extended);
+            $this->_out('EMC');
+        } else {
+            // Normal mode OR inside tagged content - just call parent without wrapping
+            parent::setGraphicVars($gvars, $extended);
+        }
+    }
+
+    /**
      * Override _putresources() to output structure tree objects BEFORE catalog
      * This ensures xref table is correctly built
      */
