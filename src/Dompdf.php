@@ -908,9 +908,15 @@ class Dompdf
             $registeredCount++;
             
             // Continue with children
-            foreach ($frame->get_children() as $child) {
+            $children = $frame->get_children();
+            $childCount = 0;
+            foreach ($children as $child) {
+                $childCount++;
                 $walkTree($child);
             }
+            SimpleLogger::log("dompdf_logs", __METHOD__, 
+                sprintf("Frame %s had %d children", $frame->get_id(), $childCount)
+            );
         };
         
         // Start the tree walk from root
