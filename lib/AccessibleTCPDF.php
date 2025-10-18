@@ -183,6 +183,25 @@ class AccessibleTCPDF extends TCPDF
     }
     
     /**
+     * Override setFontSize to prevent empty BT/ET blocks in PDF stream
+     * These empty font operations violate PDF/UA requirement that all content must be tagged or marked as Artifact
+     * 
+     * We suppress output during setFontSize() because:
+     * 1. TCPDF's getCellCode() already outputs font commands when rendering text
+     * 2. Empty BT/ET blocks violate PDF/UA (all content must be tagged or Artifact)
+     * 3. Font info is still stored internally for later use
+     * 
+     * @param float $size The font size in points
+     * @param boolean $out if true output the font size command, otherwise only set the font properties
+     * @public
+     */
+    public function setFontSize($size, $out=true) {
+        // Always suppress output - font will be properly set when text is actually rendered in getCellCode()
+        // This prevents ~60 empty BT/Tf/ET blocks that violate PDF/UA
+        parent::setFontSize($size, false);
+    }
+    
+    /**
      * Get the current semantic element being rendered
      * 
      * @return SemanticElement|null
