@@ -82,25 +82,6 @@ class AccessibleTCPDF extends TCPDF
     private int $structParentCounter = 1;
 
     /**
-     * Stack of pending tagged content blocks
-     * Used to properly nest BDC/EMC around TCPDF operations
-     * @var array Array of ['tag' => string, 'properties' => string, 'started' => bool]
-     */
-    private array $tagStack = [];
-
-    /**
-     * Whether we should inject BDC after the next BT operator
-     * @var bool
-     */
-    private bool $injectBDCAfterBT = false;
-
-    /**
-     * The BDC command to inject after BT
-     * @var string|null
-     */
-    private ?string $pendingBDCCommand = null;
-
-    /**
      * Track which frame currently has an open BDC block
      * Format: ['frameId' => int, 'pdfTag' => string, 'mcid' => int, 'semanticId' => string] or null
      * This prevents opening multiple BDC blocks for the same frame (which happens when
@@ -152,22 +133,10 @@ class AccessibleTCPDF extends TCPDF
             // The extra Q operator after the link causes PDF/UA validation errors
             $this->tcpdflink = false;
         }
-
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "AccessibleTCPDF initialized");
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "PDF/UA support " . ($pdfua ? "enabled" : "disabled"));
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "PDF/A support " . ($pdfa ? "enabled" : "disabled"));
         
         // Store reference to semantic elements
         if ($semanticElementsRef !== null) {
             $this->semanticElementsRef = &$semanticElementsRef;
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf(
-                    "Semantic elements reference received: %d elements (OK if 0 - will be filled later)",
-                    count($semanticElementsRef)
-                )
-            );
-        } else {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "No semantic elements reference provided");
         }
     }
 
@@ -184,12 +153,6 @@ class AccessibleTCPDF extends TCPDF
     public function setCurrentFrameId(?string $frameId): void
     {
         $this->currentFrameId = $frameId;
-        
-        if ($frameId !== null) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("Current frame ID set to: %s", $frameId)
-            );
-        }
     }
     
     /**
@@ -243,204 +206,6 @@ class AccessibleTCPDF extends TCPDF
         return null;
     }
 
-    // ========================================================================
-    // GENERIC TAGGING INFRASTRUCTURE
-    // These methods provide a reusable framework for tagging ANY TCPDF operation
-    // (Text, Image, Line, Rect, Circle, etc.) with proper PDF structure tags
-    // ========================================================================
-
-    /**
-     * Inject content directly into the current page buffer
-     * 
-     * @param string $content The content to inject
-     */
-    private function _injectIntoPageBuffer(string $content): void
-    {
-        // Get current page buffer
-        $pageBuffer = $this->getPageBuffer($this->page);
-        
-        // Append content to page buffer
-        $this->setPageBuffer($this->page, $pageBuffer . $content);
-        
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("Injected into page buffer: %s", trim($content))
-        );
-    }
-    
-    /**
-     * Start marked content with proper PDF tagging
-     * 
-     * @param SemanticElement $semantic The semantic element
-     */
-    private function _startMarkedContent(SemanticElement $semantic): void
-    {
-        // If this is a #text node, we need to find its parent element
-        // because text content should be tagged with the parent's tag
-        if ($semantic->tag === '#text') {
-            // Try to find parent semantic element
-            $parentSemantic = $this->_findParentSemanticElement($semantic->frameId);
-            
-            if ($parentSemantic === null) {
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    "Skipping #text node - no parent element found"
-                );
-                return;
-            }
-            
-            // Use parent's semantic info for tagging
-            $semantic = $parentSemantic;
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("Using parent element for #text: %s", $semantic)
-            );
-        }
-        
-        $tag = $semantic->getPdfStructureTag();
-        $mcid = $this->mcidCounter++;
-        
-        // Build properties dictionary
-        $properties = sprintf('/MCID %d', $mcid);
-        
-        // Add alt text for images
-        if ($semantic->isImage() && $semantic->hasAltText()) {
-            $altText = \TCPDF_STATIC::_escape($semantic->getAltText());
-            $properties .= sprintf(' /Alt (%s)', $altText);
-        }
-        
-        // Use BDC (Begin Dictionary Content) for tagged content
-        $command = sprintf('/%s << %s >> BDC', $tag, $properties);
-        
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("Starting marked content: %s", $command)
-        );
-        
-        // CRITICAL FIX: Inject directly into page buffer instead of using _out()
-        // _out() doesn't work properly within text rendering context
-        $this->_injectIntoPageBuffer($command . "\n");
-        
-        // Track BDC depth for graphics-state wrapping logic
-        $this->bdcDepth++;
-        
-        // Track in structure tree
-        $this->structureTree[] = [
-            'tag' => $tag,
-            'mcid' => $mcid,
-            'semantic' => $semantic,
-            'page' => $this->page
-        ];
-    }
-    
-    /**
-     * End marked content
-     */
-    private function _endMarkedContent(): void
-    {
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "Ending marked content");
-        
-        // CRITICAL FIX: Inject directly into page buffer
-        $this->_injectIntoPageBuffer("EMC\n");
-        
-        // Track BDC depth
-        $this->bdcDepth--;
-    }
-    
-    /**
-     * Prepare for tagged content by forcing font initialization
-     * 
-     * This ensures font setup (BT /FX nn Tf ET) happens OUTSIDE the BDC/EMC block,
-     * preventing veraPDF from flagging font operators as untagged content.
-     * 
-     * This is only needed for text operations (Text, Cell, MultiCell, etc.)
-     * Other operations (Image, Line, Rect) don't need font preparation.
-     * 
-     * @param SemanticElement $semantic The semantic element
-     */
-    protected function _prepareFontForTagging(SemanticElement $semantic): void
-    {
-        // Get current font info
-        $fontKey = $this->CurrentFont['i'] ?? 'F1';
-        $fontSize = $this->FontSizePt ?? 12;
-        
-        // Output artifact block with font setup
-        // This forces TCPDF to consider the font as "already set" for the next operation
-        $artifactBlock = sprintf(
-            "/Artifact BMC\nBT\n/%s %.6F Tf\nET\nEMC\n",
-            $fontKey,
-            $fontSize
-        );
-        $this->_injectIntoPageBuffer($artifactBlock);
-        
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("Forced font initialization for %s (Font: %s %.2fpt)", 
-                $semantic->getPdfStructureTag(), $fontKey, $fontSize)
-        );
-    }
-
-    /**
-     * Generic wrapper for tagged TCPDF operations
-     * 
-     * This method wraps ANY TCPDF operation (Text, Image, Line, etc.) with proper BDC/EMC tags.
-     * It handles:
-     * - Artifact marking for decorative/auto-generated content
-     * - Proper BDC/EMC placement around content
-     * - Font initialization to avoid untagged font operators
-     * 
-     * Usage examples:
-     *   // For Text:
-     *   $this->_wrapWithTag($semantic, function() use ($x, $y, $txt, ...) {
-     *       parent::Text($x, $y, $txt, ...);
-     *   });
-     * 
-     *   // For Image (future):
-     *   $this->_wrapWithTag($semantic, function() use ($file, $x, $y, ...) {
-     *       parent::Image($file, $x, $y, ...);
-     *   });
-     * 
-     * @param SemanticElement|null $semantic The semantic element (or null for untagged content)
-     * @param callable $operation The TCPDF operation to execute
-     * @param bool $needsFontPrep Whether to prepare font before tagging (needed for Text operations)
-     * @return mixed The result of the operation
-     */
-    protected function _wrapWithTag(?SemanticElement $semantic, callable $operation, bool $needsFontPrep = false)
-    {
-        // Handle untagged content (mark as Artifact)
-        if ($semantic === null) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                "Marking operation as Artifact (no semantic element)"
-            );
-            $this->_injectIntoPageBuffer("/Artifact BMC\n");
-            $result = $operation();
-            $this->_injectIntoPageBuffer("EMC\n");
-            return $result;
-        }
-        
-        // Handle decorative content (mark as Artifact)
-        if ($semantic->isDecorative()) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                "Marking operation as Artifact (decorative)"
-            );
-            $this->_injectIntoPageBuffer("/Artifact BMC\n");
-            $result = $operation();
-            $this->_injectIntoPageBuffer("EMC\n");
-            return $result;
-        }
-        
-        // For real content with font operations, prepare font first
-        if ($needsFontPrep) {
-            $this->_prepareFontForTagging($semantic);
-        }
-        
-        // Start marked content
-        $this->_startMarkedContent($semantic);
-        
-        // Execute the operation
-        $result = $operation();
-        
-        // End marked content
-        $this->_endMarkedContent();
-        
-        return $result;
-    }
-
     /**
      * Build the structure tree from collected semantic elements
      * Uses _newobj() to properly register objects in xref table
@@ -449,15 +214,9 @@ class AccessibleTCPDF extends TCPDF
      */
     private function _createStructureTree(): ?array
     {
-        // Skip if no semantic elements
         if (empty($this->structureTree)) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "No structure tree to output");
             return null;
         }
-        
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("Building structure tree with %d elements", count($this->structureTree))
-        );
         
         // Group structure elements by page
         $pageStructures = [];
@@ -540,11 +299,6 @@ class AccessibleTCPDF extends TCPDF
                 // CRITICAL: _newobj() already outputs "N 0 obj"
                 // We just need to output the content and "endobj"
                 $this->_out($out);
-                
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("Created StructElem %d for %s (MCID %d)", 
-                        $objId, $struct['tag'], $struct['mcid'])
-                );
             }
         }
         
@@ -569,11 +323,6 @@ class AccessibleTCPDF extends TCPDF
             $this->_out($out);  // _newobj() already output "N 0 obj"
             
             $linkStructElemObjIds[] = $linkObjId;
-            
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("Created Link StructElem %d for annotation %d (%s)", 
-                    $linkObjId, $annot['obj_id'], $annot['url'])
-            );
         }
         
         // Combine all StructElem IDs for Document's /K array
@@ -611,11 +360,6 @@ class AccessibleTCPDF extends TCPDF
         // CRITICAL: Use calculated $documentObjId from line 487!
         // Call _newobj() to allocate the next ID (which should match our calculation)
         $actualDocumentObjId = $this->_newobj();
-        if ($actualDocumentObjId !== $documentObjId) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("ERROR: Document ID mismatch! Expected %d, got %d", $documentObjId, $actualDocumentObjId)
-            );
-        }
         $out = '<<';
         $out .= ' /Type /StructElem';
         $out .= ' /S /Document';
@@ -630,11 +374,6 @@ class AccessibleTCPDF extends TCPDF
         // Output StructTreeRoot
         // CRITICAL: Use calculated $structTreeRootObjId from line 488!
         $actualStructTreeRootObjId = $this->_newobj();
-        if ($actualStructTreeRootObjId !== $structTreeRootObjId) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("ERROR: StructTreeRoot ID mismatch! Expected %d, got %d", $structTreeRootObjId, $actualStructTreeRootObjId)
-            );
-        }
         $out = '<<';
         $out .= ' /Type /StructTreeRoot';
         $out .= sprintf(' /K [%d 0 R]', $documentObjId);
@@ -647,11 +386,6 @@ class AccessibleTCPDF extends TCPDF
         $out .= ' >>';
         $out .= "\n".'endobj';
         $this->_out($out);  // _newobj() already output "N 0 obj"
-        
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("StructTreeRoot created: Object %d with Document %d", 
-                $structTreeRootObjId, $documentObjId)
-        );
         
         // Return StructTreeRoot ObjID
         return [
@@ -962,9 +696,6 @@ class AccessibleTCPDF extends TCPDF
     {
         // CRITICAL: Close any open BDC block before finalizing the document
         if ($this->activeBDCFrame !== null) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("Closing final BDC for frame %s (bdcDepth=%d)", $this->activeBDCFrame['semanticId'], $this->bdcDepth)
-            );
             // Inject EMC into the current page buffer
             if ($this->state == 2 && isset($this->page)) {
                 $this->setPageBuffer($this->page, "EMC\n", true);
@@ -983,23 +714,11 @@ class AccessibleTCPDF extends TCPDF
                 $this->savedPageObjIds = $this->page_obj_id;
                 $this->savedN = $this->n;
                 
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("Saved page_obj_id with %d pages and n=%d", count($this->savedPageObjIds), $this->savedN)
-                );
-                
                 // BUILD structure tree
-                // Note: _createStructureTree() now uses _newobj() and _out() internally
-                // to properly register objects in xref table. It returns the ObjIDs.
                 $structureTreeData = $this->_createStructureTree();
                 if ($structureTreeData !== null) {
                     // Save struct tree root ID for catalog modification
                     $this->savedStructTreeRootObjId = $structureTreeData['struct_tree_root_obj_id'];
-                    
-                    SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                        sprintf("Structure tree created: StructTreeRoot = %d, Document = %d", 
-                            $this->savedStructTreeRootObjId, 
-                            $structureTreeData['document_obj_id'])
-                    );
                 }
             }
         }
@@ -1017,25 +736,12 @@ class AccessibleTCPDF extends TCPDF
         // Get parent's annotation refs
         $annots = parent::_getannotsrefs($n);
         
-        // DEBUG: Always log this
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("Called for page %d | pdfua=%s | structureTree count=%d", 
-                $n, 
-                var_export($this->pdfua, true),
-                count($this->structureTree)
-            )
-        );
-        
         // If PDF/UA mode, add /StructParents and /Tabs after annotations
         if ($this->pdfua && !empty($this->structureTree)) {
             // Page's /StructParents maps to ParentTree for resolving MCIDs
-            // Use 0 for first page (MCIDs 0,1,... will be in page's array)
             $annots .= ' /StructParents 0';
             // FIX 3: /Tabs /S tells Adobe to follow structure for reading order
             $annots .= ' /Tabs /S';
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                "PDF/UA: Adding /StructParents 0 /Tabs /S to page $n"
-            );
         }
         
         return $annots;
@@ -1133,9 +839,6 @@ class AccessibleTCPDF extends TCPDF
                         // For Links in PDF/UA mode, add descriptive Contents
                         $contents_text = 'Link to ' . $pl['txt'];
                         $annots .= ' /Contents '.$this->_textstring($contents_text, $annot_obj_id);
-                        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                            sprintf("Added /Contents to Link annotation %d: %s", $annot_obj_id, $contents_text)
-                        );
                     } elseif ($pl['opt']['subtype'] !== 'Link') {
                         // For non-Link annotations, use original behavior
                         $annots .= ' /Contents '.$this->_textstring($pl['txt'], $annot_obj_id);
@@ -1311,13 +1014,8 @@ class AccessibleTCPDF extends TCPDF
                         'text' => is_string($text) ? $text : 'Link',
                         'url' => $url,
                         'page' => $page,
-                        'struct_parent' => $this->structParentCounter++  // Assign and increment
+                        'struct_parent' => $this->structParentCounter++
                     ];
-                    
-                    SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                        sprintf("Tracked Link annotation: obj_id=%d, url=%s, contents=%s", 
-                            $lastAnnot['n'], $url, $opt['Contents'] ?? 'none')
-                    );
                 }
             }
         }
@@ -1407,11 +1105,6 @@ class AccessibleTCPDF extends TCPDF
         if ($this->pdfua && !empty($this->structureTree) && isset($this->savedStructTreeRootObjId)) {
             $out .= ' /StructTreeRoot ' . $this->savedStructTreeRootObjId . ' 0 R';
             $out .= ' /MarkInfo << /Marked true >>';
-            
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("PDF/UA: Added /StructTreeRoot %d 0 R and /MarkInfo to Catalog", 
-                    $this->savedStructTreeRootObjId)
-            );
         }
         
         // === CONTINUE TCPDF LOGIC ===
@@ -1541,169 +1234,35 @@ class AccessibleTCPDF extends TCPDF
 
     /**
      * Override _putXMP() to add PDF/UA identification metadata
-     * Complete override to inject pdfuaid namespace
+     * Uses reflection to inject pdfuaid namespace into parent's XMP without full override
      */
     protected function _putXMP()
     {
-        // If not PDF/UA mode, use parent's XMP
+        // If not PDF/UA mode, use parent's XMP unchanged
         if (!$this->pdfua || empty($this->structureTree)) {
             return parent::_putXMP();
         }
         
-        // === PDF/UA MODE: Custom XMP with pdfuaid ===
-        $oid = $this->_newobj();
-        // store current isunicode value
-        $prev_isunicode = $this->isunicode;
-        $this->isunicode = true;
-        $prev_encrypted = $this->encrypted;
-        $this->encrypted = false;
+        // SMART APPROACH: Temporarily add PDF/UA metadata to custom_xmp_rdf
+        // TCPDF's _putXMP() outputs custom_xmp_rdf before </rdf:RDF>, perfect for injection!
         
-        // set XMP data
-        $xmp = '<?xpacket begin="'.TCPDF_FONTS::unichr(0xfeff, $this->isunicode).'" id="W5M0MpCehiHzreSzNTczkc9d"?>'."\n";
-        $xmp .= '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 4.2.1-c043 52.372728, 2009/01/18-15:08:04">'."\n";
-        $xmp .= "\t".'<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'."\n";
-        $xmp .= "\t\t".'<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">'."\n";
-        $xmp .= "\t\t\t".'<dc:format>application/pdf</dc:format>'."\n";
-        $xmp .= "\t\t\t".'<dc:title>'."\n";
-        $xmp .= "\t\t\t\t".'<rdf:Alt>'."\n";
-        $xmp .= "\t\t\t\t\t".'<rdf:li xml:lang="x-default">'.TCPDF_STATIC::_escapeXML($this->title).'</rdf:li>'."\n";
-        $xmp .= "\t\t\t\t".'</rdf:Alt>'."\n";
-        $xmp .= "\t\t\t".'</dc:title>'."\n";
-        $xmp .= "\t\t\t".'<dc:creator>'."\n";
-        $xmp .= "\t\t\t\t".'<rdf:Seq>'."\n";
-        $xmp .= "\t\t\t\t\t".'<rdf:li>'.TCPDF_STATIC::_escapeXML($this->author).'</rdf:li>'."\n";
-        $xmp .= "\t\t\t\t".'</rdf:Seq>'."\n";
-        $xmp .= "\t\t\t".'</dc:creator>'."\n";
-        $xmp .= "\t\t\t".'<dc:description>'."\n";
-        $xmp .= "\t\t\t\t".'<rdf:Alt>'."\n";
-        $xmp .= "\t\t\t\t\t".'<rdf:li xml:lang="x-default">'.TCPDF_STATIC::_escapeXML($this->subject).'</rdf:li>'."\n";
-        $xmp .= "\t\t\t\t".'</rdf:Alt>'."\n";
-        $xmp .= "\t\t\t".'</dc:description>'."\n";
-        $xmp .= "\t\t\t".'<dc:subject>'."\n";
-        $xmp .= "\t\t\t\t".'<rdf:Bag>'."\n";
-        $xmp .= "\t\t\t\t\t".'<rdf:li>'.TCPDF_STATIC::_escapeXML($this->keywords).'</rdf:li>'."\n";
-        $xmp .= "\t\t\t\t".'</rdf:Bag>'."\n";
-        $xmp .= "\t\t\t".'</dc:subject>'."\n";
-        $xmp .= "\t\t".'</rdf:Description>'."\n";
+        $savedCustomXmpRdf = $this->custom_xmp_rdf;
         
-        // convert doc creation date format
-        $dcdate = TCPDF_STATIC::getFormattedDate($this->doc_creation_timestamp);
-        $doccreationdate = substr($dcdate, 0, 4).'-'.substr($dcdate, 4, 2).'-'.substr($dcdate, 6, 2);
-        $doccreationdate .= 'T'.substr($dcdate, 8, 2).':'.substr($dcdate, 10, 2).':'.substr($dcdate, 12, 2);
-        $doccreationdate .= substr($dcdate, 14, 3).':'.substr($dcdate, 18, 2);
-        $doccreationdate = TCPDF_STATIC::_escapeXML($doccreationdate);
-        // convert doc modification date format
-        $dmdate = TCPDF_STATIC::getFormattedDate($this->doc_modification_timestamp);
-        $docmoddate = substr($dmdate, 0, 4).'-'.substr($dmdate, 4, 2).'-'.substr($dmdate, 6, 2);
-        $docmoddate .= 'T'.substr($dmdate, 8, 2).':'.substr($dmdate, 10, 2).':'.substr($dmdate, 12, 2);
-        $docmoddate .= substr($dmdate, 14, 3).':'.substr($dmdate, 18, 2);
-        $docmoddate = TCPDF_STATIC::_escapeXML($docmoddate);
+        // Inject PDF/UA identification
+        $pdfuaMetadata = "\t\t".'<rdf:Description rdf:about="" xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/">'."\n";
+        $pdfuaMetadata .= "\t\t\t".'<pdfuaid:part>1</pdfuaid:part>'."\n";
+        $pdfuaMetadata .= "\t\t\t".'<pdfuaid:conformance>A</pdfuaid:conformance>'."\n";
+        $pdfuaMetadata .= "\t\t".'</rdf:Description>'."\n";
         
-        $xmp .= "\t\t".'<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/">'."\n";
-        $xmp .= "\t\t\t".'<xmp:CreateDate>'.$doccreationdate.'</xmp:CreateDate>'."\n";
-        $xmp .= "\t\t\t".'<xmp:CreatorTool>'.$this->creator.'</xmp:CreatorTool>'."\n";
-        $xmp .= "\t\t\t".'<xmp:ModifyDate>'.$docmoddate.'</xmp:ModifyDate>'."\n";
-        $xmp .= "\t\t\t".'<xmp:MetadataDate>'.$doccreationdate.'</xmp:MetadataDate>'."\n";
-        $xmp .= "\t\t".'</rdf:Description>'."\n";
-        $xmp .= "\t\t".'<rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/">'."\n";
-        $xmp .= "\t\t\t".'<pdf:Keywords>'.TCPDF_STATIC::_escapeXML($this->keywords).'</pdf:Keywords>'."\n";
-        $xmp .= "\t\t\t".'<pdf:Producer>'.TCPDF_STATIC::_escapeXML(TCPDF_STATIC::getTCPDFProducer()).'</pdf:Producer>'."\n";
-        $xmp .= "\t\t".'</rdf:Description>'."\n";
-        $xmp .= "\t\t".'<rdf:Description rdf:about="" xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/">'."\n";
-        $uuid = 'uuid:'.substr($this->file_id, 0, 8).'-'.substr($this->file_id, 8, 4).'-'.substr($this->file_id, 12, 4).'-'.substr($this->file_id, 16, 4).'-'.substr($this->file_id, 20, 12);
-        $xmp .= "\t\t\t".'<xmpMM:DocumentID>'.$uuid.'</xmpMM:DocumentID>'."\n";
-        $xmp .= "\t\t\t".'<xmpMM:InstanceID>'.$uuid.'</xmpMM:InstanceID>'."\n";
-        $xmp .= "\t\t".'</rdf:Description>'."\n";
+        $this->custom_xmp_rdf = $savedCustomXmpRdf . $pdfuaMetadata;
         
-        // === PDF/UA IDENTIFICATION ===
-        // CRITICAL: veraPDF requires pdfuaid:part and pdfuaid:conformance
-        $xmp .= "\t\t".'<rdf:Description rdf:about="" xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/">'."\n";
-        $xmp .= "\t\t\t".'<pdfuaid:part>1</pdfuaid:part>'."\n";
-        $xmp .= "\t\t\t".'<pdfuaid:conformance>A</pdfuaid:conformance>'."\n";
-        $xmp .= "\t\t".'</rdf:Description>'."\n";
+        // Call parent - it will include our PDF/UA metadata
+        $result = parent::_putXMP();
         
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            "PDF/UA: Added pdfuaid:part=1 and pdfuaid:conformance=A to XMP metadata"
-        );
+        // Restore original custom_xmp_rdf
+        $this->custom_xmp_rdf = $savedCustomXmpRdf;
         
-        // XMP extension schemas (keep TCPDF's default extensions)
-        $xmp .= "\t\t".'<rdf:Description rdf:about="" xmlns:pdfaExtension="http://www.aiim.org/pdfa/ns/extension/" xmlns:pdfaSchema="http://www.aiim.org/pdfa/ns/schema#" xmlns:pdfaProperty="http://www.aiim.org/pdfa/ns/property#">'."\n";
-        $xmp .= "\t\t\t".'<pdfaExtension:schemas>'."\n";
-        $xmp .= "\t\t\t\t".'<rdf:Bag>'."\n";
-        $xmp .= "\t\t\t\t\t".'<rdf:li rdf:parseType="Resource">'."\n";
-        $xmp .= "\t\t\t\t\t\t".'<pdfaSchema:namespaceURI>http://ns.adobe.com/pdf/1.3/</pdfaSchema:namespaceURI>'."\n";
-        $xmp .= "\t\t\t\t\t\t".'<pdfaSchema:prefix>pdf</pdfaSchema:prefix>'."\n";
-        $xmp .= "\t\t\t\t\t\t".'<pdfaSchema:schema>Adobe PDF Schema</pdfaSchema:schema>'."\n";
-        $xmp .= "\t\t\t\t\t\t".'<pdfaSchema:property>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t".'<rdf:Seq>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t".'<rdf:li rdf:parseType="Resource">'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:category>internal</pdfaProperty:category>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:description>Adobe PDF Schema</pdfaProperty:description>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:name>InstanceID</pdfaProperty:name>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:valueType>URI</pdfaProperty:valueType>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t".'</rdf:li>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t".'</rdf:Seq>'."\n";
-        $xmp .= "\t\t\t\t\t\t".'</pdfaSchema:property>'."\n";
-        $xmp .= "\t\t\t\t\t".'</rdf:li>'."\n";
-        $xmp .= "\t\t\t\t\t".'<rdf:li rdf:parseType="Resource">'."\n";
-        $xmp .= "\t\t\t\t\t\t".'<pdfaSchema:namespaceURI>http://ns.adobe.com/xap/1.0/mm/</pdfaSchema:namespaceURI>'."\n";
-        $xmp .= "\t\t\t\t\t\t".'<pdfaSchema:prefix>xmpMM</pdfaSchema:prefix>'."\n";
-        $xmp .= "\t\t\t\t\t\t".'<pdfaSchema:schema>XMP Media Management Schema</pdfaSchema:schema>'."\n";
-        $xmp .= "\t\t\t\t\t\t".'<pdfaSchema:property>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t".'<rdf:Seq>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t".'<rdf:li rdf:parseType="Resource">'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:category>internal</pdfaProperty:category>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:description>UUID based identifier for specific incarnation of a document</pdfaProperty:description>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:name>InstanceID</pdfaProperty:name>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:valueType>URI</pdfaProperty:valueType>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t".'</rdf:li>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t".'</rdf:Seq>'."\n";
-        $xmp .= "\t\t\t\t\t\t".'</pdfaSchema:property>'."\n";
-        $xmp .= "\t\t\t\t\t".'</rdf:li>'."\n";
-        $xmp .= "\t\t\t\t\t".'<rdf:li rdf:parseType="Resource">'."\n";
-        $xmp .= "\t\t\t\t\t\t".'<pdfaSchema:namespaceURI>http://www.aiim.org/pdfa/ns/id/</pdfaSchema:namespaceURI>'."\n";
-        $xmp .= "\t\t\t\t\t\t".'<pdfaSchema:prefix>pdfaid</pdfaSchema:prefix>'."\n";
-        $xmp .= "\t\t\t\t\t\t".'<pdfaSchema:schema>PDF/A ID Schema</pdfaSchema:schema>'."\n";
-        $xmp .= "\t\t\t\t\t\t".'<pdfaSchema:property>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t".'<rdf:Seq>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t".'<rdf:li rdf:parseType="Resource">'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:category>internal</pdfaProperty:category>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:description>Part of PDF/A standard</pdfaProperty:description>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:name>part</pdfaProperty:name>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:valueType>Integer</pdfaProperty:valueType>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t".'</rdf:li>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t".'<rdf:li rdf:parseType="Resource">'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:category>internal</pdfaProperty:category>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:description>Amendment of PDF/A standard</pdfaProperty:description>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:name>amd</pdfaProperty:name>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:valueType>Text</pdfaProperty:valueType>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t".'</rdf:li>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t".'<rdf:li rdf:parseType="Resource">'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:category>internal</pdfaProperty:category>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:description>Conformance level of PDF/A standard</pdfaProperty:description>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:name>conformance</pdfaProperty:name>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t\t".'<pdfaProperty:valueType>Text</pdfaProperty:valueType>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t\t".'</rdf:li>'."\n";
-        $xmp .= "\t\t\t\t\t\t\t".'</rdf:Seq>'."\n";
-        $xmp .= "\t\t\t\t\t\t".'</pdfaSchema:property>'."\n";
-        $xmp .= "\t\t\t\t\t".'</rdf:li>'."\n";
-        $xmp .= $this->custom_xmp_rdf_pdfaExtension;
-        $xmp .= "\t\t\t\t".'</rdf:Bag>'."\n";
-        $xmp .= "\t\t\t".'</pdfaExtension:schemas>'."\n";
-        $xmp .= "\t\t".'</rdf:Description>'."\n";
-        $xmp .= $this->custom_xmp_rdf;
-        $xmp .= "\t".'</rdf:RDF>'."\n";
-        $xmp .= $this->custom_xmp;
-        $xmp .= '</x:xmpmeta>'."\n";
-        $xmp .= '<?xpacket end="w"?>';
-        
-        $out = '<< /Type /Metadata /Subtype /XML /Length '.strlen($xmp).' >> stream'."\n".$xmp."\n".'endstream'."\n".'endobj';
-        // restore previous isunicode value
-        $this->isunicode = $prev_isunicode;
-        $this->encrypted = $prev_encrypted;
-        $this->_out($out);
-        
-        return $oid;
+        return $result;
     }
     
     /**
@@ -1730,20 +1289,7 @@ class AccessibleTCPDF extends TCPDF
     protected function getCellCode($w, $h=0, $txt='', $border=0, $ln=0, $align='', $fill=false, $link='', $stretch=0, $ignore_min_height=false, $calign='T', $valign='M')
     {
         // Get the original cell code from parent
-        $cellCode = parent::getCellCode($w, $h, $txt, $border, $ln, $align, $fill, $link, $stretch, $ignore_min_height, $calign, $valign);
-        
-        // DEBUG: Log RAW cellCode BEFORE any processing
-        if ($txt === "This") {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                "=== RAW CELLCODE FOR 'This' (before extraction) ==="
-            );
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                $cellCode
-            );
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                "=== END RAW CELLCODE ==="
-            );
-        }
+        $cellCode = parent::getCellCode($w, $h, $txt, $border, $ln, $align, $fill, $link, $stretch, $ignore_min_height, $calign, $valign);    
         
         // If not PDF/UA mode, return as-is
         if ($this->pdfua !== true) {
