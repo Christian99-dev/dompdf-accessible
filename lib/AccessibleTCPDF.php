@@ -132,6 +132,32 @@ class AccessibleTCPDF extends TCPDF
             // This is rendered in Close() method independent of Footer() mechanism
             // The extra Q operator after the link causes PDF/UA validation errors
             $this->tcpdflink = false;
+            
+            // PDF/UA REQUIREMENT: All fonts must be embedded (PDF/UA 7.21.4.1)
+            // Force core fonts to be embedded by setting unicode flag
+            $this->isunicode = true;
+            
+            // Replace standard fonts with DejaVu equivalents
+            $this->CoreFonts = [
+                'courier' => 'dejavusansmono',
+                'courierB' => 'dejavusansmono',
+                'courierI' => 'dejavusansmono',
+                'courierBI' => 'dejavusansmono',
+                'helvetica' => 'dejavusans',
+                'helveticaB' => 'dejavusans',
+                'helveticaI' => 'dejavusans',
+                'helveticaBI' => 'dejavusans',
+                'times' => 'dejavuserif',
+                'timesB' => 'dejavuserif',
+                'timesI' => 'dejavuserif',
+                'timesBI' => 'dejavuserif',
+                'symbol' => 'dejavusans',
+                'zapfdingbats' => 'dejavusans'
+            ];
+            
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                "PDF/UA mode: Core fonts redirected to DejaVu for embedding compliance."
+            );
         }
         
         // Store reference to semantic elements
@@ -421,6 +447,46 @@ class AccessibleTCPDF extends TCPDF
     // Always check: if($this->pdfua !== true || $semantic === null) bypass to parent
     // ========================================================================
     
+    /**
+     * Override SetFont to redirect Base 14 fonts to embedded equivalents in PDF/UA mode
+     * 
+     * CRITICAL: PDF/UA Rule 7.21.4.1 requires ALL fonts to be embedded.
+     * TCPDF's Base 14 fonts (Helvetica, Times, Courier, Symbol, ZapfDingbats) are NOT embedded.
+     * We redirect them to DejaVu equivalents which ARE embedded.
+     * 
+     * @param string $family Font family
+     * @param string $style Font style
+     * @param float $size Font size
+     * @param string $fontfile Font file path
+     * @param string $subset Subset mode
+     * @param boolean $out Output font command
+     * @public
+     */
+    public function SetFont($family, $style='', $size=null, $fontfile='', $subset='default', $out=true) {
+        if ($this->pdfua) {
+            // Map Base 14 fonts to DejaVu equivalents
+            $fontMap = [
+                'helvetica' => 'dejavusans',
+                'times' => 'dejavuserif',
+                'courier' => 'dejavusansmono',
+                'symbol' => 'dejavusans',
+                'zapfdingbats' => 'dejavusans'
+            ];
+            
+            $familyLower = strtolower($family);
+            if (isset($fontMap[$familyLower])) {
+                $oldFamily = $family;
+                $family = $fontMap[$familyLower];
+                
+                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                    sprintf("PDF/UA: Redirected font '%s' → '%s' for embedding", $oldFamily, $family)
+                );
+            }
+        }
+        
+        parent::SetFont($family, $style, $size, $fontfile, $subset, $out);
+    }
+
     /**
      * Override setFontSize to suppress font operations in PDF/UA mode
      * 
