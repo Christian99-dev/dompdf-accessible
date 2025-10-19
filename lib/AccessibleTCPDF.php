@@ -10,6 +10,11 @@ use Dompdf\SemanticElement;
 
 require_once __DIR__ . '/../lib/tcpdf/tcpdf.php';
 
+// Load Accessibility Managers
+require_once __DIR__ . '/AccessibleTCPDF/BDCStateManager.php';
+require_once __DIR__ . '/AccessibleTCPDF/TaggingManager.php';
+require_once __DIR__ . '/AccessibleTCPDF/ContentWrapperManager.php';
+
 /**
  * AccessibleTCPDF - PDF/UA compatible TCPDF extension
  *
@@ -18,6 +23,32 @@ require_once __DIR__ . '/../lib/tcpdf/tcpdf.php';
  */
 class AccessibleTCPDF extends TCPDF
 {   
+    // ========================================================================
+    // MANAGER INSTANCES - Microservice Architecture
+    // ========================================================================
+    
+    /**
+     * BDC State Manager - Handles BDC/EMC lifecycle
+     * @var BDCStateManager
+     */
+    private BDCStateManager $bdcManager;
+    
+    /**
+     * Tagging Manager - Resolves semantic elements to PDF tags
+     * @var TaggingManager
+     */
+    private TaggingManager $taggingManager;
+    
+    /**
+     * Content Wrapper Manager - Font injection & Artifact wrapping
+     * @var ContentWrapperManager
+     */
+    private ContentWrapperManager $contentWrapper;
+    
+    // ========================================================================
+    // LEGACY STATE (will be moved to managers)
+    // ========================================================================
+    
     /**
      * Reference to semantic elements storage from Canvas
      * This is a direct reference to the $_semantic_elements array from CanvasSemanticTrait
@@ -76,23 +107,6 @@ class AccessibleTCPDF extends TCPDF
     private int $structParentCounter = 1;
 
     /**
-     * Track which frame currently has an open BDC block
-     * Format: ['frameId' => int, 'pdfTag' => string, 'mcid' => int, 'semanticId' => string] or null
-     * This prevents opening multiple BDC blocks for the same frame (which happens when
-     * TCPDF renders one frame as multiple Cell() calls)
-     * @var array|null
-     */
-    private ?array $activeBDCFrame = null;
-
-    /**
-     * Track BDC/EMC nesting depth
-     * Incremented on BDC, decremented on EMC
-     * Used to prevent wrapping graphics ops as Artifacts when inside tagged content
-     * @var int
-     */
-    private int $bdcDepth = 0;
-
-    /**
      * Constructor
      * 
      * @param string $orientation Page orientation (P or L)
@@ -118,7 +132,6 @@ class AccessibleTCPDF extends TCPDF
     ) 
     {        
         parent::__construct($orientation, $unit, $format, $unicode, $encoding, $diskcache, $pdfa);
-
         $this->pdfua = $pdfua === true && $semanticElementsRef !== null;
         if(!$this->pdfua) return;
 
@@ -153,96 +166,27 @@ class AccessibleTCPDF extends TCPDF
         
         // Store reference to semantic elements from Canvas
         $this->semanticElementsRef = &$semanticElementsRef;
+        
+        // BDC State Manager - No dependencies
+        $this->bdcManager = new BDCStateManager();
+        
+        // Tagging Manager - Needs semantic elements reference
+        $this->taggingManager = new TaggingManager($this->semanticElementsRef);
+        
+        // Content Wrapper Manager - No dependencies
+        $this->contentWrapper = new ContentWrapperManager();
     }
-
-    // ========================================================================
-    // SEMANTIC ELEMENT FRAME MANAGEMENT
-    // These methods provide a reusable framework for tagging TCPDF operation
-    // ========================================================================
 
     /**
      * Set the current frame ID being rendered
+     * This is called from the Renderer/Canvas, so that AccessibleTCPDF knows
+     * which frame is currently being processed.
      * 
      * @param string|null $frameId The frame ID
      */
     public function setCurrentFrameId(?string $frameId): void
     {
         $this->currentFrameId = $frameId;
-    }
-    
-    /**
-     * Get the current semantic element being rendered
-     * 
-     * @return SemanticElement|null
-     */
-    private function _getCurrentSemanticElement(): ?SemanticElement
-    {
-        // If no semantic elements or no current frame, return null
-        if ($this->semanticElementsRef === null || $this->currentFrameId === null) {
-            return null;
-        }
-
-        // Frames die während Reflow erstellt werden, sind nicht registriert
-        if (!isset($this->semanticElementsRef[$this->currentFrameId])) {
-            return null;  // Das ist OK - diese Frames erben den Kontext vom Parent
-        }
-        
-        return $this->semanticElementsRef[$this->currentFrameId];
-    }
-    
-    /**
-     * Find semantic parent element with flexible filtering options
-     * 
-     * This unified method searches backwards through frame IDs to find parent elements,
-     * with optional filtering to skip certain element types:
-     * - Always skips #text nodes (they don't define structure)
-     * - Optionally skips transparent inline styling tags (strong, em, span, etc.)
-     * 
-     * Use cases:
-     * 1. Find immediate non-#text parent: _findParentSemanticElement($frameId)
-     * 2. Find semantic parent for tagging (skip transparent tags): _findParentSemanticElement($frameId, true)
-     * 
-     * Example with skipTransparentTags=true:
-     * <p><strong style="color:red">hello</strong> world</p>
-     * 
-     * Frame tree: P (4) → Strong (5) → Text (6)
-     * - _findParentSemanticElement(6, false) → Strong (5)
-     * - _findParentSemanticElement(6, true)  → P (4) [skips Strong as transparent]
-     * 
-     * This prevents creating nested structure elements like /P → /Strong,
-     * which violates PDF/UA rules about Artifacts inside tagged content.
-     * 
-     * @param int $frameId The starting frame ID
-     * @param bool $skipTransparentTags If true, skip transparent inline styling tags (strong, em, span, etc.)
-     * @return SemanticElement|null The parent element, or null if not found
-     */
-    private function _findParentSemanticElement(int $frameId, bool $skipTransparentTags = false): ?SemanticElement
-    {
-        if ($this->semanticElementsRef === null) {
-            return null;
-        }
-        
-        // Search backwards from current frame ID to find parent
-        // Parent frames have lower IDs in Dompdf's frame tree
-        for ($parentId = $frameId - 1; $parentId >= 0; $parentId--) {
-            if (isset($this->semanticElementsRef[(string)$parentId])) {
-                $parent = $this->semanticElementsRef[(string)$parentId];
-                
-                // Always skip #text parents (they don't define structure)
-                if ($parent->tag === '#text') {
-                    continue;
-                }
-                
-                // Optionally skip transparent inline styling tags
-                if ($skipTransparentTags && $parent->isTransparentInlineTag()) {
-                    continue;
-                }
-                
-                return $parent;
-            }
-        }
-        
-        return null;
     }
 
     // ========================================================================
@@ -543,9 +487,12 @@ class AccessibleTCPDF extends TCPDF
         $out .= sprintf(' /K [%d 0 R]', $documentObjId);
         $out .= sprintf(' /ParentTree %d 0 R', $parentTreeObjId);
         $out .= ' /ParentTreeNextKey 2';
-        // RoleMap is empty - all tags (H1, P, Link, Document) are PDF standard types
-        // Adding standard types to RoleMap causes "circular mapping" veraPDF errors
-        $out .= ' /RoleMap << >>';
+        
+        // PDF/UA COMPLIANCE: RoleMap for non-standard structure types
+        // Strong, Em → Span (inline emphasis)
+        // Standard types (H1, P, Link, Div, etc.) must NOT be in RoleMap
+        $out .= ' /RoleMap << /Strong /Span /Em /Span >>';
+        
         $out .= sprintf(' /IDTree << /Nums [ 0 %d 0 R ] >>', $documentObjId);
         $out .= ' >>';
         $out .= "\n".'endobj';
@@ -581,11 +528,9 @@ class AccessibleTCPDF extends TCPDF
     // ========================================================================
     
     /**
-     * Override SetFont to redirect Base 14 fonts to embedded equivalents in PDF/UA mode
+     * Override SetFont to redirect Base 14 fonts via ContentWrapperManager
      * 
-     * CRITICAL: PDF/UA Rule 7.21.4.1 requires ALL fonts to be embedded.
-     * TCPDF's Base 14 fonts (Helvetica, Times, Courier, Symbol, ZapfDingbats) are NOT embedded.
-     * We redirect them to DejaVu equivalents which ARE embedded.
+     * REFACTORED: Font mapping delegated to manager
      * 
      * @param string $family Font family
      * @param string $style Font style
@@ -597,24 +542,8 @@ class AccessibleTCPDF extends TCPDF
      */
     public function SetFont($family, $style='', $size=null, $fontfile='', $subset='default', $out=true) {
         if ($this->pdfua) {
-            // Map Base 14 fonts to DejaVu equivalents
-            $fontMap = [
-                'helvetica' => 'dejavusans',
-                'times' => 'dejavuserif',
-                'courier' => 'dejavusansmono',
-                'symbol' => 'dejavusans',
-                'zapfdingbats' => 'dejavusans'
-            ];
-            
-            $familyLower = strtolower($family);
-            if (isset($fontMap[$familyLower])) {
-                $oldFamily = $family;
-                $family = $fontMap[$familyLower];
-                
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("PDF/UA: Redirected font '%s' → '%s' for embedding", $oldFamily, $family)
-                );
-            }
+            // Map font via ContentWrapperManager
+            $family = $this->contentWrapper->mapPDFUAFont($family);
         }
         
         parent::SetFont($family, $style, $size, $fontfile, $subset, $out);
@@ -667,10 +596,8 @@ class AccessibleTCPDF extends TCPDF
      */
     protected function _endpage() {
         // PDF/UA FIX: Close any open BDC block BEFORE wrapping page-end graphics
-        if ($this->pdfua && $this->activeBDCFrame !== null && $this->page > 0 && $this->state == 2) {
-            $this->_out("\nEMC");  // Close the last content BDC (with leading newline)
-            $this->bdcDepth--;
-            $this->activeBDCFrame = null;
+        if ($this->pdfua && $this->bdcManager->getActiveBDCFrame() !== null && $this->page > 0 && $this->state == 2) {
+            $this->_out("\n" . $this->bdcManager->closeBDC());
         }
         
         // PDF/UA FIX: Wrap any remaining page content as Artifact
@@ -693,52 +620,25 @@ class AccessibleTCPDF extends TCPDF
 
     /**
      * Override setGraphicVars to wrap graphics-state operations as Artifacts
-     * PDF/UA requires all content to be either tagged or marked as Artifact
-     * 
-     * Graphics-state operations (line width, cap, join, dash, colors) are decorative
-     * and must be marked as Artifacts to prevent "untagged content" validation errors.
-     * 
-     * CRITICAL: Do NOT create nested Artifacts inside BDC blocks!
-     * Only wrap as Artifact when OUTSIDE tagged content ($bdcDepth == 0).
-     * 
-     * @param array $gvars Array of graphic variables
-     * @param boolean $extended If true restore extended graphic variables
-     * @protected
      */
     protected function setGraphicVars($gvars, $extended=false) {
         // Only wrap as Artifact when OUTSIDE BDC blocks
-        // State >= 1 allows wrapping during page end (state=1) and normal rendering (state=2)
-        if ($this->pdfua && $this->page > 0 && $this->state >= 1 && $this->bdcDepth == 0) {
-            // Wrap graphics-state output as Artifact
+        if ($this->pdfua && $this->page > 0 && $this->state >= 1 && !$this->bdcManager->isInsideTaggedContent()) {
             $this->_out('/Artifact BMC');
             parent::setGraphicVars($gvars, $extended);
             $this->_out('EMC');
         } else {
-            // Normal mode OR inside BDC - just call parent without wrapping
             parent::setGraphicVars($gvars, $extended);
         }
     }
 
     /**
      * Override setExtGState to wrap ExtGState operations as Artifacts
-     * PDF/UA requires all content to be either tagged or marked as Artifact
-     * 
-     * ExtGState operations (/GS1 gs, /GS2 gs, etc.) control transparency and blending.
-     * 
-     * CRITICAL: veraPDF does NOT allow nested Artifacts OR untagged content inside BDC blocks!
-     * We SUPPRESS setExtGState() when inside tagged content ($bdcDepth > 0).
-     * This prevents untagged /GS1 gs operations from appearing in BDC blocks.
-     * 
-     * TRADE-OFF: Transparency may not work correctly for tagged content.
-     * This is acceptable for PDF/UA compliance as transparency is primarily visual.
-     * 
-     * @param int $gs extgstate identifier
-     * @protected
      */
     protected function setExtGState($gs) {
         // SUPPRESS ExtGState when inside tagged content blocks
-        if ($this->pdfua && $this->bdcDepth > 0) {
-            return; // Suppress ExtGState inside BDC
+        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
+            return;
         }
         
         // Only wrap if PDF/UA mode AND we're OUTSIDE tagged content blocks
@@ -753,14 +653,10 @@ class AccessibleTCPDF extends TCPDF
     
     /**
      * Override StartTransform to prevent untagged 'q' operator
-     * CRITICAL: The 'q' (save graphics state) is a graphics-state operator that
-     * must be tagged as Artifact or suppressed when inside BDC blocks!
-     * 
-     * @public
      */
     public function StartTransform() {
         // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
-        if ($this->pdfua && ($this->bdcDepth > 0)) {
+        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
             // Track transform matrix but don't output 'q'
             if ($this->state != 2) {
                 return;
@@ -780,14 +676,10 @@ class AccessibleTCPDF extends TCPDF
     
     /**
      * Override StopTransform to prevent untagged 'Q' operator
-     * CRITICAL: The 'Q' (restore graphics state) must be suppressed if the
-     * corresponding 'q' was suppressed!
-     * 
-     * @public
      */
     public function StopTransform() {
         // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
-        if ($this->pdfua && ($this->bdcDepth > 0)) {
+        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
             // Restore transform matrix but don't output 'Q'
             if ($this->state != 2) {
                 return;
@@ -811,14 +703,12 @@ class AccessibleTCPDF extends TCPDF
     
     /**
      * Override _outSaveGraphicsState to prevent untagged 'q' operator
-     * CRITICAL: Many TCPDF methods call this directly (not via StartTransform)!
-     * Footer uses this before Cell() calls, which creates untagged 'q' inside BDC!
      * 
      * @protected
      */
     protected function _outSaveGraphicsState() {
         // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
-        if ($this->pdfua && ($this->bdcDepth > 0)) {
+        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
             return; // Suppress 'q' output
         }
         
@@ -827,13 +717,12 @@ class AccessibleTCPDF extends TCPDF
     
     /**
      * Override _outRestoreGraphicsState to prevent untagged 'Q' operator
-     * CRITICAL: Must suppress if corresponding 'q' was suppressed!
      * 
      * @protected
      */
     protected function _outRestoreGraphicsState() {
         // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
-        if ($this->pdfua && ($this->bdcDepth > 0)) {
+        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
             return; // Suppress 'Q' output
         }
         
@@ -847,13 +736,11 @@ class AccessibleTCPDF extends TCPDF
     protected function _putresources()
     {
         // CRITICAL: Close any open BDC block before finalizing the document
-        if ($this->pdfua && $this->activeBDCFrame !== null) {
+        if ($this->pdfua && $this->bdcManager->getActiveBDCFrame() !== null) {
             // Inject EMC into the current page buffer
             if ($this->state == 2 && isset($this->page)) {
-                $this->setPageBuffer($this->page, "EMC\n", true);
-                $this->bdcDepth--;  // Decrement when closing final BDC
+                $this->setPageBuffer($this->page, $this->bdcManager->closeBDC(), true);
             }
-            $this->activeBDCFrame = null;
         }
         
         // Call parent first to output all standard resources
@@ -1229,19 +1116,13 @@ class AccessibleTCPDF extends TCPDF
     }
     
     /**
-     * Override getCellCode() to add PDF/UA tagging DIRECTLY into the PDF code string
+     * Override getCellCode() to add PDF/UA tagging via Manager Architecture
      * 
-     * CRITICAL: This is THE KEY method for text tagging in TCPDF.
-     * getCellCode() returns the PDF code string that Cell() will output via _out().
-     * By wrapping this string with BDC/EMC markers, we ensure proper tagging.
-     * 
-     * TCPDF's flow: Text() → Cell() → getCellCode() → returns string → _out(string)
-     * 
-     * This automatically tags ALL text operations:
-     * - Text()
-     * - Write()  
-     * - MultiCell() (uses Cell internally)
-     * - Cell() itself
+     * REFACTORED: Reduced from 189 lines to ~30 lines (-84%)
+     * All complex logic delegated to specialized managers:
+     * - TaggingManager: Semantic resolution
+     * - BDCStateManager: BDC/EMC lifecycle
+     * - ContentWrapperManager: Font injection & Artifact wrapping
      * 
      * @param float $w Cell width
      * @param float $h Cell height
@@ -1251,7 +1132,7 @@ class AccessibleTCPDF extends TCPDF
      */
     protected function getCellCode($w, $h=0, $txt='', $border=0, $ln=0, $align='', $fill=false, $link='', $stretch=0, $ignore_min_height=false, $calign='T', $valign='M')
     {
-        // Get the original cell code from parent
+        // Get original cell code from parent TCPDF
         $cellCode = parent::getCellCode($w, $h, $txt, $border, $ln, $align, $fill, $link, $stretch, $ignore_min_height, $calign, $valign);    
         
         // If not PDF/UA mode, return as-is
@@ -1259,221 +1140,48 @@ class AccessibleTCPDF extends TCPDF
             return $cellCode;
         }
         
-        // Get current semantic element from Dompdf's frame tree
-        $semantic = $this->_getCurrentSemanticElement();
+        // STEP 1: Resolve tagging decision via TaggingManager
+        $decision = $this->taggingManager->resolveTagging($this->currentFrameId);
         
-        // Only log if there's actual text content (avoid spam from empty cells)
-        if ($txt !== '' && $txt !== null) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf(
-                    "getCellCode with text: \"%s\" | Semantic: %s%s",
-                    substr($txt, 0, 50) . (strlen($txt) > 50 ? '...' : ''),
-                    $semantic ? (string)$semantic : 'NONE',
-                    $semantic && $semantic->isDecorative() ? ' (decorative)' : ''
-                )
-            );
+        // STEP 2: Handle Artifact content
+        if ($decision->isArtifact) {
+            // Close any open BDC before Artifact
+            $result = $this->bdcManager->closeBDC();
+            
+            // Wrap as Artifact
+            return $result . $this->contentWrapper->wrapAsArtifact($cellCode);
         }
         
-        // If no semantic element (e.g., TCPDF footer), mark as Artifact
-        if ($semantic === null) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "Marking as Artifact");
-            
-            // CRITICAL: Close any open BDC before starting Artifact
-            $result = '';
-            if ($this->activeBDCFrame !== null) {
-                $result .= "EMC\n";
-                $this->bdcDepth--;  // Decrement when closing BDC
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("Closed BDC for frame %s before Artifact (bdcDepth=%d)", $this->activeBDCFrame['semanticId'], $this->bdcDepth)
-                );
-                $this->activeBDCFrame = null;
-            }
-            
-            return $result . "/Artifact BMC\n" . $cellCode . "EMC\n";
-        }
-        
-        // If decorative, mark as Artifact
-        if ($semantic->isDecorative()) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "Marking decorative as Artifact");
-            
-            // CRITICAL: Close any open BDC before starting Artifact
-            $result = '';
-            if ($this->activeBDCFrame !== null) {
-                $result .= "EMC\n";
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("Closed BDC for frame %s before decorative Artifact", $this->activeBDCFrame['semanticId'])
-                );
-                $this->activeBDCFrame = null;
-            }
-            
-            return $result . "/Artifact BMC\n" . $cellCode . "EMC\n";
-        }
-        
-        // For #text nodes, use parent element for tagging
-        $tagElement = $semantic;
-        if ($semantic->tag === '#text') {
-            $parentSemantic = $this->_findParentSemanticElement($semantic->id, false);
-            if ($parentSemantic === null) {
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    "Skipping #text - no parent found, marking as Artifact"
-                );
-                return "/Artifact BMC\n" . $cellCode . "EMC\n";
-            }
-            $tagElement = $parentSemantic;
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                "Using parent element for #text: " . $tagElement
-            );
-        }
-        
-        // CRITICAL: Skip transparent inline styling tags (strong, em, span, etc.)
-        // These tags provide visual styling but should not create separate structure elements.
-        // Instead, find the semantic parent (e.g., <p>, <h1>, <div>) for tagging.
-        // 
-        // Example: <p><strong style="color:red">hello</strong> world</p>
-        // - Both "hello" and "world" get tagged with /P (not /Strong)
-        // - The red color and bold style are applied INSIDE the /P tag
-        // - No nested /Strong BDC block (which would violate PDF/UA rules)
-        if ($tagElement->isTransparentInlineTag()) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("Skipping transparent inline tag <%s>, finding semantic parent", $tagElement->tag)
-            );
-            $semanticParent = $this->_findParentSemanticElement($tagElement->id, true);
-            if ($semanticParent === null) {
-                // No semantic parent found - fallback to using this element
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("Warning: No semantic parent found for transparent tag <%s>, using it anyway", $tagElement->tag)
-                );
-            } else {
-                $tagElement = $semanticParent;
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("Using semantic parent for tagging: %s", $tagElement)
-                );
-            }
-        }
-        
-        $pdfTag = $tagElement->getPdfStructureTag();
-        $semanticId = $tagElement->id;  // Unique ID for this semantic element
-        
-        // FRAME BOUNDARY DETECTION:
-        // Check if we're still in the same frame as the active BDC block
-        $sameFrame = ($this->activeBDCFrame !== null && 
-                     $this->activeBDCFrame['semanticId'] === $semanticId);
-        
-        if ($sameFrame) {
-            // Same frame - just return cellCode (BDC already open)
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("Continuing frame %s (no new BDC)", $semanticId)
-            );
-            
-            // CRITICAL: Inject Tf even for same-frame calls!
-            // TCPDF might skip Tf if it thinks font is already active,
-            // but q...Q isolates graphics state, so we need Tf in EVERY BT block
-            if (isset($this->CurrentFont['i']) && $this->FontSizePt) {
-                $cellCode = preg_replace(
-                    '/\bBT\s+/',
-                    sprintf('BT /F%d %F Tf ', $this->CurrentFont['i'], $this->FontSizePt),
-                    $cellCode
-                );
-            }
-            
-            return $cellCode;
-        }
-        
-        // Different frame - close previous BDC (if any) and open new one
+        // STEP 3: Handle frame transitions for tagged content
         $result = '';
-        
-        // Close previous BDC if exists
-        if ($this->activeBDCFrame !== null) {
-            $result .= "EMC\n";
-            $this->bdcDepth--;  // Decrement depth when closing BDC
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("Closed previous BDC for frame %s", $this->activeBDCFrame['semanticId'])
+        if ($this->bdcManager->shouldOpenNewBDC($decision->element->id)) {
+            // Frame boundary crossed - close previous and open new BDC
+            $mcid = $this->mcidCounter++;
+            $result = $this->bdcManager->closePreviousAndOpenNew(
+                $decision->pdfTag, 
+                $mcid, 
+                $decision->element->id
             );
+            
+            // Track in structure tree (legacy, will be moved to StructureTreeManager)
+            $this->structureTree[] = [
+                'type' => 'content',
+                'tag' => $decision->pdfTag,
+                'mcid' => $mcid,
+                'page' => $this->page,
+                'semantic' => $decision->element
+            ];
         }
         
-        // Open new BDC for this frame
-        $mcid = $this->mcidCounter++;
-        $result .= sprintf("/%s << /MCID %d >> BDC\n", $pdfTag, $mcid);
-        $this->bdcDepth++;  // Increment depth when opening BDC
-        
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("Opened new BDC: %s MCID=%d for frame %s (bdcDepth=%d)", $pdfTag, $mcid, $semanticId, $this->bdcDepth)
-        );
-        
-        // CRITICAL: Inject Tf (font selection) after every BT operator
-        // Without Tf, PDF viewers don't know which font to use → blank pages!
-        // We inject into ALL BT...ET blocks, because q...Q isolates graphics state
+        // STEP 4: Inject font operator into cell code
         if (isset($this->CurrentFont['i']) && $this->FontSizePt) {
-            $cellCode = preg_replace(
-                '/\bBT\s+/',
-                sprintf('BT /F%d %F Tf ', $this->CurrentFont['i'], $this->FontSizePt),
-                $cellCode
+            $cellCode = $this->contentWrapper->injectFontOperator(
+                $cellCode, 
+                $this->CurrentFont['i'], 
+                $this->FontSizePt
             );
         }
         
-        // Track this as the active BDC frame
-        $this->activeBDCFrame = [
-            'frameId' => $tagElement->id,
-            'pdfTag' => $pdfTag,
-            'mcid' => $mcid,
-            'semanticId' => $semanticId
-        ];
-        
-        // Track in structure tree
-        $this->structureTree[] = [
-            'type' => 'content',
-            'tag' => $pdfTag,
-            'mcid' => $mcid,
-            'page' => $this->page,
-            'semantic' => $tagElement
-        ];
-        
-        // DEBUG: Log the final return
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("RETURNING: [%s] + cellCode (WITHOUT trailing EMC - next call will close it)", 
-                str_replace("\n", "\\n", substr($result, 0, 150))
-            )
-        );
-        
-        // Return: [optional EMC for previous BDC] + BDC + cellCode
-        // NOTE: We do NOT add EMC at the end here! The NEXT getCellCode() call will close this BDC.
         return $result . $cellCode;
     }
-
-    /*
-     * FUTURE EXTENSIONS - Template for other TCPDF methods:
-     * 
-     * public function Image($file, $x='', $y='', $w=0, $h=0, $type='', ...) {
-     *     if ($this->pdfua !== true) {
-     *         return parent::Image($file, $x, $y, $w, $h, $type, ...);
-     *     }
-     *     
-     *     $semantic = $this->_getCurrentSemanticElement();
-     *     
-     *     return $this->_wrapWithTag(
-     *         $semantic,
-     *         function() use ($file, $x, $y, $w, $h, $type, ...) {
-     *             return parent::Image($file, $x, $y, $w, $h, $type, ...);
-     *         },
-     *         false  // Images don't need font preparation
-     *     );
-     * }
-     * 
-     * public function Line($x1, $y1, $x2, $y2, $style=array()) {
-     *     if ($this->pdfua !== true) {
-     *         return parent::Line($x1, $y1, $x2, $y2, $style);
-     *     }
-     *     
-     *     // Lines are usually decorative, so semantic would be null or decorative
-     *     $semantic = $this->_getCurrentSemanticElement();
-     *     
-     *     return $this->_wrapWithTag(
-     *         $semantic,
-     *         function() use ($x1, $y1, $x2, $y2, $style) {
-     *             return parent::Line($x1, $y1, $x2, $y2, $style);
-     *         },
-     *         false  // Lines don't need font preparation
-     *     );
-     * }
-     */
 }
