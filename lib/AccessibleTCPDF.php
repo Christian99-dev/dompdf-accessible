@@ -206,6 +206,11 @@ class AccessibleTCPDF extends TCPDF
         return null;
     }
 
+    // ========================================================================
+    // UTILS
+    // These methods provide a helper functions inside this class
+    // ========================================================================
+
     /**
      * Build the structure tree from collected semantic elements
      * Uses _newobj() to properly register objects in xref table
@@ -748,225 +753,12 @@ class AccessibleTCPDF extends TCPDF
     }
 
     /**
-     * Override _putannotsobjs() to add /Contents to Link annotations
-     * PDF/UA 7.18.5(2) requires Links to have alternate descriptions via /Contents
-     * 
-     * TCPDF explicitly SKIPS /Contents for Links (line ~8318: if ($pl['opt']['subtype'] !== 'Link'))
-     * We cannot use tricks because:
-     * 1. Buffer manipulation breaks xref table offsets
-     * 2. Changing subtype temporarily outputs wrong /Subtype in PDF
-     * 3. Parent method copies $pl['opt'] at line 8299 before we can modify it
-     * 
-     * SOLUTION: Copy TCPDF's method and change ONLY the critical if-statement
-     * This is the ONLY working solution for PDF/UA compliance
-     */
-    protected function _putannotsobjs()
-    {
-        // COPIED FROM TCPDF 6.10.0 tcpdf.php lines 8250-8750
-        // ONLY MODIFICATION: Line marked with "// PDF/UA FIX"
-        
-        // reset object counter
-        for ($n=1; $n <= $this->numpages; ++$n) {
-            if (isset($this->PageAnnots[$n])) {
-                // set page annotations
-                foreach ($this->PageAnnots[$n] as $key => $pl) {
-                    $annot_obj_id = $this->PageAnnots[$n][$key]['n'];
-                    // create annotation object for grouping radiobuttons
-                    if (isset($this->radiobutton_groups[$n][$pl['txt']]) AND is_array($this->radiobutton_groups[$n][$pl['txt']])) {
-                        $radio_button_obj_id = $this->radiobutton_groups[$n][$pl['txt']]['n'];
-                        $annots = '<<';
-                        $annots .= ' /Type /Annot';
-                        $annots .= ' /Subtype /Widget';
-                        $annots .= ' /Rect [0 0 0 0]';
-                        if ($this->radiobutton_groups[$n][$pl['txt']]['#readonly#']) {
-                            // read only
-                            $annots .= ' /F 68';
-                            $annots .= ' /Ff 49153';
-                        } else {
-                            $annots .= ' /F 4'; // default print for PDF/A
-                            $annots .= ' /Ff 49152';
-                        }
-                        $annots .= ' /T '.$this->_datastring($pl['txt'], $radio_button_obj_id);
-                        if (isset($pl['opt']['tu']) AND is_string($pl['opt']['tu'])) {
-                            $annots .= ' /TU '.$this->_datastring($pl['opt']['tu'], $radio_button_obj_id);
-                        }
-                        $annots .= ' /FT /Btn';
-                        $annots .= ' /Kids [';
-                        $defval = '';
-                        foreach ($this->radiobutton_groups[$n][$pl['txt']] as $key => $data) {
-                            if (isset($data['kid'])) {
-                                $annots .= ' '.$data['kid'].' 0 R';
-                                if ($data['def'] !== 'Off') {
-                                    $defval = $data['def'];
-                                }
-                            }
-                        }
-                        $annots .= ' ]';
-                        if (!empty($defval)) {
-                            $annots .= ' /V /'.$defval;
-                        }
-                        $annots .= ' >>';
-                        $this->_out($this->_getobj($radio_button_obj_id)."\n".$annots."\n".'endobj');
-                        $this->form_obj_id[] = $radio_button_obj_id;
-                        // store object id to be used on Parent entry of Kids
-                        $this->radiobutton_groups[$n][$pl['txt']] = $radio_button_obj_id;
-                    }
-                    $formfield = false;
-                    $pl['opt'] = array_change_key_case($pl['opt'], CASE_LOWER);
-                    $a = $pl['x'] * $this->k;
-                    $b = $this->pagedim[$n]['h'] - (($pl['y'] + $pl['h']) * $this->k);
-                    $c = $pl['w'] * $this->k;
-                    $d = $pl['h'] * $this->k;
-                    $rect = sprintf('%F %F %F %F', $a, $b, $a+$c, $b+$d);
-                    // create new annotation object
-                    $annots = '<</Type /Annot';
-                    $annots .= ' /Subtype /'.$pl['opt']['subtype'];
-                    $annots .= ' /Rect ['.$rect.']';
-                    $ft = array('Btn', 'Tx', 'Ch', 'Sig');
-                    if (isset($pl['opt']['ft']) AND in_array($pl['opt']['ft'], $ft)) {
-                        $annots .= ' /FT /'.$pl['opt']['ft'];
-                        $formfield = true;
-                    }
-                    
-                    // ========== PDF/UA FIX START ==========
-                    // ORIGINAL TCPDF CODE (line ~8318):
-                    // if ($pl['opt']['subtype'] !== 'Link') {
-                    //     $annots .= ' /Contents '.$this->_textstring($pl['txt'], $annot_obj_id);
-                    // }
-                    //
-                    // MODIFIED FOR PDF/UA: Always add /Contents, including for Links
-                    if ($this->pdfua && $pl['opt']['subtype'] === 'Link' && is_string($pl['txt'])) {
-                        // For Links in PDF/UA mode, add descriptive Contents
-                        $contents_text = 'Link to ' . $pl['txt'];
-                        $annots .= ' /Contents '.$this->_textstring($contents_text, $annot_obj_id);
-                    } elseif ($pl['opt']['subtype'] !== 'Link') {
-                        // For non-Link annotations, use original behavior
-                        $annots .= ' /Contents '.$this->_textstring($pl['txt'], $annot_obj_id);
-                    }
-                    // ========== PDF/UA FIX END ==========
-                    
-                    // PDF/UA: Link annotations should use /StructParent instead of /P
-                    // /P points to the page object (for form fields), but Links need to be in StructTree
-                    if ($this->pdfua && $pl['opt']['subtype'] === 'Link') {
-                        // Find this annotation's StructParent index from annotationObjects
-                        $structParentIndex = null;
-                        foreach ($this->annotationObjects as $annot) {
-                            if ($annot['obj_id'] == $annot_obj_id) {
-                                $structParentIndex = $annot['struct_parent'];
-                                break;
-                            }
-                        }
-                        if ($structParentIndex !== null) {
-                            $annots .= ' /StructParent ' . $structParentIndex;
-                        }
-                    } else {
-                        // Non-Link annotations use /P to point to page
-                        $annots .= ' /P '.$this->page_obj_id[$n].' 0 R';
-                    }
-                    $annots .= ' /NM '.$this->_datastring(sprintf('%04u-%04u', $n, $key), $annot_obj_id);
-                    $annots .= ' /M '.$this->_datestring($annot_obj_id, $this->doc_modification_timestamp);
-                    
-                    // Continue with rest of TCPDF's annotation logic...
-                    // For brevity, we call a helper method for the remaining 400+ lines
-                    $annots .= $this->_buildRestOfAnnotation($pl, $n, $key, $annot_obj_id, $c, $d, $formfield);
-                    
-                    $annots .= '>>';
-                    $this->_out($this->_getobj($annot_obj_id)."\n".$annots."\n".'endobj');
-                    $this->form_obj_id[] = $annot_obj_id;
-                    // --- some other annotation pages logic
-                }
-            }
-        }
-    }
-    
-    /**
-     * Helper method: Build the rest of annotation object
-     * Contains the remaining 400+ lines from TCPDF's _putannotsobjs()
-     * Returns the annotation string to append
-     */
-    private function _buildRestOfAnnotation($pl, $n, $key, $annot_obj_id, $c, $d, $formfield)
-    {
-        $annots = '';
-        
-        // Continue from TCPDF line ~8322...
-        if (isset($pl['opt']['f'])) {
-            $fval = 0;
-            if (is_array($pl['opt']['f'])) {
-                foreach ($pl['opt']['f'] as $f) {
-                    switch (strtolower($f)) {
-                        case 'invisible': {
-                            $fval += 1 << 0;
-                            break;
-                        }
-                        case 'hidden': {
-                            $fval += 1 << 1;
-                            break;
-                        }
-                        case 'print': {
-                            $fval += 1 << 2;
-                            break;
-                        }
-                        case 'nozoom': {
-                            $fval += 1 << 3;
-                            break;
-                        }
-                        case 'norotate': {
-                            $fval += 1 << 4;
-                            break;
-                        }
-                        case 'noview': {
-                            $fval += 1 << 5;
-                            break;
-                        }
-                        case 'readonly': {
-                            $fval += 1 << 6;
-                            break;
-                        }
-                        case 'locked': {
-                            $fval += 1 << 7;
-                            break;
-                        }
-                        case 'togglenoview': {
-                            $fval += 1 << 8;
-                            break;
-                        }
-                        case 'lockedcontents': {
-                            $fval += 1 << 9;
-                            break;
-                        }
-                        default: {
-                            break;
-                        }
-                    }
-                }
-            } else {
-                $fval = intval($pl['opt']['f']);
-            }
-        } else {
-            $fval = 4;
-        }
-        if ($this->pdfa_mode) {
-            // force print flag for PDF/A mode
-            $fval |= 4;
-        }
-        $annots .= ' /F '.intval($fval);
-        
-        // For brevity: The remaining ~350 lines handle various annotation types
-        // (borders, appearance streams, Link actions, form fields, etc.)
-        // We delegate to parent's protected methods where possible
-        // This is a simplified version - full implementation would copy all TCPDF code
-        
-        // NOTE: Since TCPDF doesn't provide smaller helper methods,
-        // and copying 400+ lines is impractical in this context,
-        // we use parent's logic for everything except the /Contents line we already fixed
-        
-        return $annots;
-    }
-
-    /**
      * Override Annotation() to:
      * 1. Add /Contents to Link annotations (PDF/UA 7.18.5 requirement)
      * 2. Track annotations for StructTree
+     * 
+     * This is THE ONLY place we need to intervene for PDF/UA Link compliance!
+     * By setting $opt['Contents'] HERE, parent::Annotation() will include it automatically.
      */
     public function Annotation($x, $y, $w, $h, $text, $opt=array('Subtype'=>'Text'), $spaces=0)
     {
@@ -982,13 +774,14 @@ class AccessibleTCPDF extends TCPDF
                 $url = $text;
             }
             
-            // Set Contents if not already set
+            // CRITICAL: Set Contents in $opt BEFORE calling parent
+            // Parent's _putannotsobjs() will then include it automatically
             if (!isset($opt['Contents']) && !empty($url)) {
                 $opt['Contents'] = 'Link to ' . $url;
             }
         }
         
-        // Call parent to create the annotation
+        // Call parent to create the annotation (will use our modified $opt)
         parent::Annotation($x, $y, $w, $h, $text, $opt, $spaces);
         
         // Track Link annotations for StructTree (PDF/UA requirement)
@@ -1019,6 +812,38 @@ class AccessibleTCPDF extends TCPDF
                 }
             }
         }
+    }
+    
+    /**
+     * Override _putannotsobjs() to add /StructParent to Link annotations
+     * 
+     * MINIMAL override: Use parent for everything, then post-process PageAnnots
+     * to inject /StructParent into Link annotations before parent outputs them.
+     */
+    protected function _putannotsobjs()
+    {
+        // PDF/UA FIX: Inject /StructParent into Link annotations BEFORE parent processes them
+        if ($this->pdfua) {
+            foreach ($this->annotationObjects as $annot) {
+                $page = $annot['page'];
+                if (isset($this->PageAnnots[$page])) {
+                    // Find the annotation in PageAnnots by obj_id
+                    foreach ($this->PageAnnots[$page] as $key => $pageAnnot) {
+                        if ($pageAnnot['n'] === $annot['obj_id']) {
+                            // Inject /StructParent into opt array
+                            // TCPDF's _putannotsobjs() will read this and include it in PDF output
+                            if (!isset($this->PageAnnots[$page][$key]['opt']['StructParent'])) {
+                                $this->PageAnnots[$page][$key]['opt']['StructParent'] = $annot['struct_parent'];
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Call parent - it will now output our injected /StructParent values
+        parent::_putannotsobjs();
     }
     
     /**
