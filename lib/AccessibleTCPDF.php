@@ -191,13 +191,32 @@ class AccessibleTCPDF extends TCPDF
     }
     
     /**
-     * Find parent semantic element for a given frame ID
-     * Searches backwards through frame IDs to find the nearest non-#text parent
+     * Find semantic parent element with flexible filtering options
      * 
-     * @param int $frameId The child frame ID
-     * @return SemanticElement|null
+     * This unified method searches backwards through frame IDs to find parent elements,
+     * with optional filtering to skip certain element types:
+     * - Always skips #text nodes (they don't define structure)
+     * - Optionally skips transparent inline styling tags (strong, em, span, etc.)
+     * 
+     * Use cases:
+     * 1. Find immediate non-#text parent: _findParentSemanticElement($frameId)
+     * 2. Find semantic parent for tagging (skip transparent tags): _findParentSemanticElement($frameId, true)
+     * 
+     * Example with skipTransparentTags=true:
+     * <p><strong style="color:red">hello</strong> world</p>
+     * 
+     * Frame tree: P (4) → Strong (5) → Text (6)
+     * - _findParentSemanticElement(6, false) → Strong (5)
+     * - _findParentSemanticElement(6, true)  → P (4) [skips Strong as transparent]
+     * 
+     * This prevents creating nested structure elements like /P → /Strong,
+     * which violates PDF/UA rules about Artifacts inside tagged content.
+     * 
+     * @param int $frameId The starting frame ID
+     * @param bool $skipTransparentTags If true, skip transparent inline styling tags (strong, em, span, etc.)
+     * @return SemanticElement|null The parent element, or null if not found
      */
-    private function _findParentSemanticElement(int $frameId): ?SemanticElement
+    private function _findParentSemanticElement(int $frameId, bool $skipTransparentTags = false): ?SemanticElement
     {
         if ($this->semanticElementsRef === null) {
             return null;
@@ -209,8 +228,13 @@ class AccessibleTCPDF extends TCPDF
             if (isset($this->semanticElementsRef[(string)$parentId])) {
                 $parent = $this->semanticElementsRef[(string)$parentId];
                 
-                // Skip #text parents, go further up
+                // Always skip #text parents (they don't define structure)
                 if ($parent->tag === '#text') {
+                    continue;
+                }
+                
+                // Optionally skip transparent inline styling tags
+                if ($skipTransparentTags && $parent->isTransparentInlineTag()) {
                     continue;
                 }
                 
@@ -412,58 +436,6 @@ class AccessibleTCPDF extends TCPDF
             'struct_tree_root_obj_id' => $structTreeRootObjId,
             'document_obj_id' => $documentObjId
         ];
-    }
-
-    /**
-     * Extract graphics-state line from cellCode
-     * 
-     * CRITICAL: veraPDF treats ANY graphics operation (even empty 'q') as untagged contentItem!
-     * We must extract ALL graphics operations including q/Q.
-     * 
-     * Pattern in TCPDF output:
-     * "0.570000 w 0 J 0 j [] 0 d 0 G 0 g\nq 0.000000 0.000000 0.000000 rg BT 0 Tr 0.000000 w ET BT ... TJ ET Q"
-     * 
-     * We extract EVERYTHING except the actual text rendering "BT ... TJ ET":
-     * 1. "0.570000 w 0 J 0 j [] 0 d 0 G 0 g" → Artifact
-     * 2. "q 0.000000 0.000000 0.000000 rg" → Artifact  
-     * 3. "BT 0 Tr 0.000000 w ET" → Artifact
-     * 4. "Q" → Artifact
-     * 
-     * And keep inside BDC: "BT ... TJ ET" (ONLY the text)
-     * 
-     * @param string $cellCode Original PDF code from parent::getCellCode()
-     * @return array [$graphicsLines, $cleanedCellCode]
-     * @protected
-     */
-    protected function _extractGraphicsOps($cellCode) {
-        $graphicsLines = [];
-        
-        // Extract first line if it's graphics-state
-        $lines = explode("\n", $cellCode, 2);
-        if (count($lines) >= 2 && preg_match('/^[\d\.]+ w [\d]+ J [\d]+ j \[.*?\] [\d]+ d [\d\.]+ G [\d\.]+ g$/', $lines[0])) {
-            $graphicsLines[] = $lines[0];
-            $cellCode = $lines[1];
-        }
-        
-        // Extract "q ...color... BT 0 Tr 0.000000 w ET" and remove q/Q entirely
-        $cellCode = preg_replace_callback(
-            '/q ([^\n]+?)\s+BT (\d+) Tr ([\d\.]+) w ET\s+(.*?)\s+Q/s',
-            function($matches) use (&$graphicsLines) {
-                // Extract ALL graphics operations
-                $graphicsLines[] = 'q ' . $matches[1];  // Graphics state save + color
-                $graphicsLines[] = 'BT ' . $matches[2] . ' Tr ' . $matches[3] . ' w ET';  // Render mode
-                $graphicsLines[] = 'Q';  // Graphics state restore
-                // Return ONLY the text rendering part (without q/Q)
-                return $matches[4];
-            },
-            $cellCode
-        );
-        
-        if (empty($graphicsLines)) {
-            return ['', $cellCode];
-        }
-        
-        return [implode("\n", $graphicsLines), $cellCode];
     }
 
     // ========================================================================
@@ -1220,7 +1192,7 @@ class AccessibleTCPDF extends TCPDF
         // For #text nodes, use parent element for tagging
         $tagElement = $semantic;
         if ($semantic->tag === '#text') {
-            $parentSemantic = $this->_findParentSemanticElement($semantic->frameId);
+            $parentSemantic = $this->_findParentSemanticElement($semantic->frameId, false);
             if ($parentSemantic === null) {
                 SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                     "Skipping #text - no parent found, marking as Artifact"
@@ -1233,6 +1205,32 @@ class AccessibleTCPDF extends TCPDF
             );
         }
         
+        // CRITICAL: Skip transparent inline styling tags (strong, em, span, etc.)
+        // These tags provide visual styling but should not create separate structure elements.
+        // Instead, find the semantic parent (e.g., <p>, <h1>, <div>) for tagging.
+        // 
+        // Example: <p><strong style="color:red">hello</strong> world</p>
+        // - Both "hello" and "world" get tagged with /P (not /Strong)
+        // - The red color and bold style are applied INSIDE the /P tag
+        // - No nested /Strong BDC block (which would violate PDF/UA rules)
+        if ($tagElement->isTransparentInlineTag()) {
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                sprintf("Skipping transparent inline tag <%s>, finding semantic parent", $tagElement->tag)
+            );
+            $semanticParent = $this->_findParentSemanticElement($tagElement->frameId, true);
+            if ($semanticParent === null) {
+                // No semantic parent found - fallback to using this element
+                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                    sprintf("Warning: No semantic parent found for transparent tag <%s>, using it anyway", $tagElement->tag)
+                );
+            } else {
+                $tagElement = $semanticParent;
+                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                    sprintf("Using semantic parent for tagging: %s", $tagElement)
+                );
+            }
+        }
+        
         $pdfTag = $tagElement->getPdfStructureTag();
         $semanticId = $tagElement->id;  // Unique ID for this semantic element
         
@@ -1242,19 +1240,23 @@ class AccessibleTCPDF extends TCPDF
                      $this->activeBDCFrame['semanticId'] === $semanticId);
         
         if ($sameFrame) {
-            // Same frame - extract graphics line and output as Artifact BEFORE content
+            // Same frame - just return cellCode (BDC already open)
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 sprintf("Continuing frame %s (no new BDC)", $semanticId)
             );
             
-            // Extract graphics-state line and output as Artifact
-            list($graphicsLine, $cleanedCellCode) = $this->_extractGraphicsOps($cellCode);
-            
-            if (!empty($graphicsLine)) {
-                return "/Artifact BMC\n" . $graphicsLine . "\nEMC\n" . $cleanedCellCode;
+            // CRITICAL: Inject Tf even for same-frame calls!
+            // TCPDF might skip Tf if it thinks font is already active,
+            // but q...Q isolates graphics state, so we need Tf in EVERY BT block
+            if (isset($this->CurrentFont['i']) && $this->FontSizePt) {
+                $cellCode = preg_replace(
+                    '/\bBT\s+/',
+                    sprintf('BT /F%d %F Tf ', $this->CurrentFont['i'], $this->FontSizePt),
+                    $cellCode
+                );
             }
             
-            return $cleanedCellCode;
+            return $cellCode;
         }
         
         // Different frame - close previous BDC (if any) and open new one
@@ -1271,43 +1273,23 @@ class AccessibleTCPDF extends TCPDF
         
         // Open new BDC for this frame
         $mcid = $this->mcidCounter++;
-        
-        // CRITICAL FIX: Extract graphics-state line from cellCode
-        // and output it as Artifact BEFORE the BDC block
-        list($graphicsLine, $cleanedCellCode) = $this->_extractGraphicsOps($cellCode);
-        
-        // DEBUG: Log extraction results
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("EXTRACTED Graphics: [%s] | Cleaned: [%s]", 
-                str_replace("\n", "\\n", substr($graphicsLine, 0, 100)),
-                str_replace("\n", "\\n", substr($cleanedCellCode, 0, 100))
-            )
-        );
-        
-        // CRITICAL FIX: Inject Tf (font selection) into BT...ET block
-        // veraPDF requires font to be set BEFORE text rendering!
-        // Pattern: "BT ... Td ... TJ ET" → "BT /F3 24.000000 Tf ... Td ... TJ ET"
-        if (isset($this->CurrentFont['i']) && $this->FontSizePt) {
-            $cleanedCellCode = preg_replace(
-                '/^BT\s+/',
-                sprintf('BT /F%d %F Tf ', $this->CurrentFont['i'], $this->FontSizePt),
-                $cleanedCellCode
-            );
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("INJECTED Tf: /F%d %F Tf into BT...ET block", $this->CurrentFont['i'], $this->FontSizePt)
-            );
-        }
-        
-        if (!empty($graphicsLine)) {
-            $result .= "/Artifact BMC\n" . $graphicsLine . "\nEMC\n";
-        }
-        
         $result .= sprintf("/%s << /MCID %d >> BDC\n", $pdfTag, $mcid);
         $this->bdcDepth++;  // Increment depth when opening BDC
         
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
             sprintf("Opened new BDC: %s MCID=%d for frame %s (bdcDepth=%d)", $pdfTag, $mcid, $semanticId, $this->bdcDepth)
         );
+        
+        // CRITICAL: Inject Tf (font selection) after every BT operator
+        // Without Tf, PDF viewers don't know which font to use → blank pages!
+        // We inject into ALL BT...ET blocks, because q...Q isolates graphics state
+        if (isset($this->CurrentFont['i']) && $this->FontSizePt) {
+            $cellCode = preg_replace(
+                '/\bBT\s+/',
+                sprintf('BT /F%d %F Tf ', $this->CurrentFont['i'], $this->FontSizePt),
+                $cellCode
+            );
+        }
         
         // Track this as the active BDC frame
         $this->activeBDCFrame = [
@@ -1328,16 +1310,14 @@ class AccessibleTCPDF extends TCPDF
         
         // DEBUG: Log the final return
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("RETURNING: [%s] + cleanedCellCode (WITHOUT trailing EMC - next call will close it)", 
+            sprintf("RETURNING: [%s] + cellCode (WITHOUT trailing EMC - next call will close it)", 
                 str_replace("\n", "\\n", substr($result, 0, 150))
             )
         );
         
-        // Return: [optional EMC for previous BDC] + [graphics ops as Artifact] + BDC + cleaned cell code
+        // Return: [optional EMC for previous BDC] + BDC + cellCode
         // NOTE: We do NOT add EMC at the end here! The NEXT getCellCode() call will close this BDC.
-        // The final BDC on a page will be closed by the next getCellCode() call (e.g. footer)
-        // or by TCPDF's page closing mechanism.
-        return $result . $cleanedCellCode;
+        return $result . $cellCode;
     }
 
     /*

@@ -111,6 +111,51 @@ class SemanticElement
         
         return false;
     }
+
+    /**
+     * Check if element is a transparent inline styling tag
+     * 
+     * Transparent inline tags provide visual styling but are not semantically relevant
+     * for PDF/UA structure. The parent block-level element is used for tagging instead.
+     * 
+     * This allows styles like bold, italic, color, etc. to be applied within tagged content
+     * without creating nested structure elements that violate PDF/UA rules.
+     * 
+     * Examples:
+     * - <strong>bold text</strong> → Style applied, but parent <p> is tagged
+     * - <span style="color:red">red text</span> → Color applied, but parent <p> is tagged
+     * - <em>italic text</em> → Style applied, but parent <p> is tagged
+     * 
+     * @return bool True if this is a transparent inline styling tag
+     */
+    public function isTransparentInlineTag(): bool
+    {
+        $transparentTags = [
+            'strong',  // Bold text
+            'b',       // Bold text (presentational)
+            'em',      // Emphasized text (usually italic)
+            'i',       // Italic text (presentational)
+            'span',    // Generic inline container (for styling)
+            'u',       // Underlined text
+            's',       // Strikethrough text
+            'del',     // Deleted text (strikethrough)
+            'ins',     // Inserted text (underline)
+            'mark',    // Highlighted text
+            'small',   // Smaller text
+            'sub',     // Subscript
+            'sup',     // Superscript
+            'code',    // Inline code (when inside p, not pre)
+            'kbd',     // Keyboard input
+            'samp',    // Sample output
+            'var',     // Variable
+            'cite',    // Citation
+            'dfn',     // Definition term
+            'abbr',    // Abbreviation
+            'time',    // Time/date
+        ];
+        
+        return in_array($this->tag, $transparentTags, true);
+    }
     
     /**
      * Check if element is a heading
