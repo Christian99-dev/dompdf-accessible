@@ -33,9 +33,10 @@ class SemanticElement
     public readonly array $attributes;
     
     /**
-     * Dompdf Frame ID
+     * Parent element ID (null if root/no parent)
+     * This is the Frame ID of the parent element
      */
-    public readonly int $frameId;
+    public readonly ?string $parentId;
     
     /**
      * CSS display property value (e.g., 'block', 'inline', 'none')
@@ -45,24 +46,24 @@ class SemanticElement
     /**
      * Constructor
      * 
-     * @param string $id Element identifier
+     * @param string $id Element identifier (Frame ID as string)
      * @param string $tag HTML tag name
      * @param array<string, string> $attributes HTML attributes
-     * @param int $frameId Dompdf Frame ID
      * @param string $display CSS display value
+     * @param string|null $parentId Parent element ID (Frame ID as string)
      */
     public function __construct(
         string $id,
         string $tag,
         array $attributes = [],
-        int $frameId = 0,
-        string $display = 'block'
+        string $display = 'block',
+        ?string $parentId = null
     ) {
         $this->id = $id;
         $this->tag = strtolower($tag);
         $this->attributes = $attributes;
-        $this->frameId = $frameId;
         $this->display = $display;
+        $this->parentId = $parentId;
     }
     
     /**
@@ -258,6 +259,111 @@ class SemanticElement
         return $this->isImage() && $this->hasAttribute('alt');
     }
     
+    // ========================================================================
+    // HIERARCHY NAVIGATION
+    // Methods for traversing the semantic element tree
+    // ========================================================================
+    
+    /**
+     * Find the parent semantic element in the tree
+     * 
+     * Uses the parentFrameId stored during registration to find the actual parent.
+     * Optionally skips transparent inline styling tags.
+     * 
+     * @param array $semanticRegistry The semantic elements registry (frameId => SemanticElement)
+     * @param bool $skipTransparentTags If true, skip transparent inline styling tags (strong, em, span, etc.)
+     * @return SemanticElement|null The parent element, or null if not found
+     */
+    public function findParent(array $semanticRegistry, bool $skipTransparentTags = false): ?SemanticElement
+    {
+        // No parent ID → root element
+        if ($this->parentId === null) {
+            return null;
+        }
+        
+        // Look up parent by ID
+        $parent = $semanticRegistry[$this->parentId] ?? null;
+        
+        if ($parent === null) {
+            return null;
+        }
+        
+        // If skipping transparent tags, recursively find non-transparent parent
+        if ($skipTransparentTags && $parent->isTransparentTag()) {
+            return $parent->findParent($semanticRegistry, true);
+        }
+        
+        return $parent;
+    }
+    
+    /**
+     * Calculate the depth of this element in the tree
+     * 
+     * Root elements (no parent) have depth 0, their children have depth 1, etc.
+     * This is used for topological sorting to ensure parent StructElems
+     * are created before their children in the PDF structure tree.
+     * 
+     * @param array $semanticRegistry The semantic elements registry (frameId => SemanticElement)
+     * @return int Depth in tree (0 = root, 1 = child, 2 = grandchild, etc.)
+     */
+    public function getDepth(array $semanticRegistry): int
+    {
+        $depth = 0;
+        $current = $this;
+        
+        // Walk up parent chain until root
+        while (true) {
+            $parent = $current->findParent($semanticRegistry, false);
+            if ($parent === null) {
+                break;
+            }
+            
+            $current = $parent;
+            $depth++;
+            
+            // Safety: prevent infinite loops
+            if ($depth > 100) {
+                SimpleLogger::log("semantic_element_logs", __METHOD__, 
+                    "WARNING: Depth exceeded 100 for element {$this->id}, breaking loop"
+                );
+                break;
+            }
+        }
+        
+        return $depth;
+    }
+    
+    /**
+     * Collect all ancestors (parent, grandparent, etc.) of this element
+     * 
+     * This ensures we create StructElems for ALL container elements in the hierarchy,
+     * even if they weren't directly rendered (e.g., table, tr, tbody elements).
+     * 
+     * @param array $semanticRegistry The semantic elements registry (frameId => SemanticElement)
+     * @return array Associative array of [frameId => SemanticElement] for all ancestors including self
+     */
+    public function collectAncestors(array $semanticRegistry): array
+    {
+        $ancestors = [];
+        $current = $this;
+        
+        // Add this element and all its parents
+        while ($current !== null) {
+            $ancestors[$current->id] = $current;
+            $current = $current->findParent($semanticRegistry, false);
+            
+            // Safety: prevent infinite loops
+            if (count($ancestors) > 100) {
+                SimpleLogger::log("semantic_element_logs", __METHOD__, 
+                    "WARNING: Ancestor count exceeded 100 for element {$this->id}, breaking loop"
+                );
+                break;
+            }
+        }
+        
+        return $ancestors;
+    }
+    
     /**
      * String representation for debugging
      * 
@@ -271,11 +377,11 @@ class SemanticElement
         }
         
         return sprintf(
-            "<%s%s> [%s] (frame_%d)",
+            "<%s%s> [%s] (frame_%s)",
             $this->tag,
             $attrs ? ' ' . implode(' ', $attrs) : '',
             $this->display,
-            $this->frameId
+            $this->id
         );
     }
 }

@@ -884,7 +884,7 @@ class Dompdf
         $walkTree = function(Frame $frame) use (&$walkTree, &$registeredCount) {
             $node = $frame->get_node();
             
-            $elementId = $frame->get_id();
+            $elementId = $frame->get_id();  // Frame ID as string
             
             // Collect all attributes
             $attributes = [];
@@ -894,13 +894,17 @@ class Dompdf
                 }
             }
             
+            // Get parent element ID
+            $parent = $frame->get_parent();
+            $parentId = $parent ? $parent->get_id() : null;
+            
             // Create SemanticElement object
             $semanticElement = new SemanticElement(
-                $elementId,
-                $node->nodeName,
-                $attributes,
-                $frame->get_id(),
-                $frame->get_style()->display
+                $elementId,              // ID (Frame ID as string)
+                $node->nodeName,         // Tag
+                $attributes,             // Attributes
+                $frame->get_style()->display,  // Display
+                $parentId                // Parent ID
             );
             
             // Register in canvas

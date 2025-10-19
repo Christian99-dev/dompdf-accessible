@@ -272,30 +272,58 @@ class AccessibleTCPDF extends TCPDF
             $pageStructures[$page][] = $struct;
         }
         
-        // CRITICAL FIX STRATEGY:
-        // 1. Count total objects needed
-        // 2. Reserve ALL object IDs upfront using _newobj()
-        // 3. Build PDF strings with correct IDs
-        // 4. Output everything in correct order using _out()
+        // ========================================================================
+        // PHASE 1: COLLECT ALL SEMANTIC ELEMENTS (including non-rendered containers)
+        // ========================================================================
         
-        // CRITICAL FIX STRATEGY:
-        // DO NOT pre-allocate object IDs with _newobj()!
-        // _newobj() must be called IMMEDIATELY before _out() to ensure correct PDF object numbering
-        // 
-        // TCPDF's internal _out() writes to the CURRENT $this->n value
-        // If we pre-allocate with _newobj(), the IDs get messed up
+        // Collect ALL semantic elements that need StructElems
+        // This includes rendered elements AND their container ancestors (table, tr, tbody)
+        $allSemanticElements = [];
         
-        // We need to know Document ID beforehand for /P references in StructElems
-        // So we calculate it based on current $this->n
-        $numStructElems = count($this->structureTree);
-        $numLinkStructElems = count($this->annotationObjects);
+        foreach ($this->structureTree as $struct) {
+            $semantic = $struct['semantic'];
+            
+            // Collect this element + all its ancestors
+            $ancestors = $semantic->collectAncestors($this->semanticElementsRef);
+            
+            foreach ($ancestors as $frameId => $ancestor) {
+                if (!isset($allSemanticElements[$frameId])) {
+                    $allSemanticElements[$frameId] = $ancestor;
+                }
+            }
+        }
         
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+            sprintf("Collected %d semantic elements (including containers)", count($allSemanticElements))
+        );
+        
+        // Sort by depth (root first, leaves last) AND element ID (parents before children)
+        // to ensure parents are created before children in PDF output
+        usort($allSemanticElements, function($a, $b) {
+            $depthCompare = $a->getDepth($this->semanticElementsRef) <=> $b->getDepth($this->semanticElementsRef);
+            if ($depthCompare !== 0) {
+                return $depthCompare; // Different depths: sort by depth
+            }
+            // Same depth: sort by ID (lower ID = parent comes first)
+            // IDs are Frame IDs as strings, cast to int for numeric comparison
+            return (int)$a->id <=> (int)$b->id;
+        });
+        
+        // ========================================================================
+        // PHASE 2: CALCULATE OBJECT IDs
+        // ========================================================================
+        
+        // We need to know all object IDs beforehand for /P references
         // Calculate future object IDs (without actually allocating them yet)
         $nextN = $this->n;  // Current object counter
-        $calculatedStructElemObjIds = [];
-        for ($i = 0; $i < $numStructElems; $i++) {
-            $calculatedStructElemObjIds[] = ++$nextN;
+        
+        // Build Frame-ID-to-ObjID mapping
+        $frameIdToObjId = [];
+        foreach ($allSemanticElements as $semantic) {
+            $frameIdToObjId[$semantic->id] = ++$nextN;
         }
+        
+        $numLinkStructElems = count($this->annotationObjects);
         $calculatedLinkObjIds = [];
         for ($i = 0; $i < $numLinkStructElems; $i++) {
             $calculatedLinkObjIds[] = ++$nextN;
@@ -304,46 +332,113 @@ class AccessibleTCPDF extends TCPDF
         $documentObjId = ++$nextN;
         $structTreeRootObjId = ++$nextN;
         
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+            sprintf("Calculated ObjIDs: %d StructElems, Document=%d, StructTreeRoot=%d", 
+                count($allSemanticElements), $documentObjId, $structTreeRootObjId)
+        );
+        
+        // ========================================================================
+        // PHASE 3: OUTPUT StructElems (in depth order)
+        // ========================================================================
+        
         // Now output objects in order
         // Each _newobj() call will increment $this->n to match our calculated IDs
         $structElemObjIds = [];
         
-        // Output StructElems first
-        foreach ($pageStructures as $pageNum => $structs) {
-            foreach ($structs as $struct) {
-                // Allocate object ID NOW (immediately before output)
-                $objId = $this->_newobj();
-                $structElemObjIds[] = $objId;
+        // Build mapping: element ID → [MCID array, page] for elements that were actually rendered
+        $frameIdToMCIDs = [];  // Note: variable name kept for compatibility, but now uses element IDs
+        foreach ($this->structureTree as $struct) {
+            $elementId = $struct['semantic']->id;
+            if (!isset($frameIdToMCIDs[$elementId])) {
+                $frameIdToMCIDs[$elementId] = [
+                    'mcids' => [],
+                    'page' => $struct['page']
+                ];
+            }
+            $frameIdToMCIDs[$elementId]['mcids'][] = $struct['mcid'];
+        }
+        
+        // Track MCID → StructElem mapping for ParentTree
+        $mcidToObjId = [];
+        
+        // Output ALL StructElems (including non-rendered containers)
+        foreach ($allSemanticElements as $semantic) {
+            // Allocate object ID NOW (immediately before output)
+            $objId = $this->_newobj();
+            $structElemObjIds[] = $objId;
+            
+            // Get PDF structure tag
+            $pdfTag = $semantic->getPdfStructureTag();
+            
+            // Determine parent: lookup via findParent() or fallback to Document
+            $parent = $semantic->findParent($this->semanticElementsRef, false);
+            $parentObjId = $parent !== null && isset($frameIdToObjId[$parent->id])
+                ? $frameIdToObjId[$parent->id]
+                : $documentObjId;
+            
+            // Build StructElem object
+            $out = '<<';
+            $out .= ' /Type /StructElem';
+            $out .= ' /S /' . $pdfTag;
+            $out .= sprintf(' /P %d 0 R', $parentObjId);  // CORRECT parent from hierarchy!
+            
+            // Add /K (kids):
+            // - If element was rendered: MCIDs
+            // - If container (not rendered): child StructElems
+            if (isset($frameIdToMCIDs[$semantic->id])) {
+                // Element was rendered → has MCIDs
+                $mcids = $frameIdToMCIDs[$semantic->id]['mcids'];
+                $pageNum = $frameIdToMCIDs[$semantic->id]['page'];
                 
-                // Build StructElem object
-                $out = '<<';
-                $out .= ' /Type /StructElem';
-                $out .= ' /S /' . $struct['tag'];
-                $out .= sprintf(' /P %d 0 R', $documentObjId);  // Use CALCULATED Document ID!
+                // Track MCID → StructElem mapping for ParentTree
+                foreach ($mcids as $mcid) {
+                    $mcidToObjId[$mcid] = $objId;
+                }
                 
-                // CRITICAL: For page content, use SIMPLE INTEGER /K + /Pg
-                // NOT MCR dictionary! MCR is for XObjects.
                 // Add page reference - REQUIRED when /K is integer!
                 if (isset($this->savedPageObjIds[$pageNum])) {
                     $out .= sprintf(' /Pg %d 0 R', $this->savedPageObjIds[$pageNum]);
                 }
                 
-                // Use simple integer MCID
-                $out .= ' /K ' . $struct['mcid'];
-                
-                // Add alt text for images
-                if ($struct['semantic']->isImage() && $struct['semantic']->hasAltText()) {
-                    $altText = TCPDF_STATIC::_escape($struct['semantic']->getAltText());
-                    $out .= ' /Alt (' . $altText . ')';
+                // Use simple integer MCID (or array if multiple)
+                if (count($mcids) === 1) {
+                    $out .= ' /K ' . $mcids[0];
+                } else {
+                    $out .= ' /K [' . implode(' ', $mcids) . ']';
+                }
+            } else {
+                // Container element (not rendered) → find children StructElems
+                $childFrameIds = [];
+                foreach ($allSemanticElements as $potentialChild) {
+                    $childParent = $potentialChild->findParent($this->semanticElementsRef, false);
+                    if ($childParent !== null && $childParent->id === $semantic->id) {
+                        $childFrameIds[] = $potentialChild->id;
+                    }
                 }
                 
-                $out .= ' >>';
-                $out .= "\n".'endobj';
-                
-                // CRITICAL: _newobj() already outputs "N 0 obj"
-                // We just need to output the content and "endobj"
-                $this->_out($out);
+                if (!empty($childFrameIds)) {
+                    $childObjIds = array_map(fn($fid) => $frameIdToObjId[$fid], $childFrameIds);
+                    $out .= ' /K [' . implode(' 0 R ', $childObjIds) . ' 0 R]';
+                }
             }
+            
+            // Add alt text for images
+            if ($semantic->isImage() && $semantic->hasAltText()) {
+                $altText = TCPDF_STATIC::_escape($semantic->getAltText());
+                $out .= ' /Alt (' . $altText . ')';
+            }
+            
+            $out .= ' >>';
+            $out .= "\n".'endobj';
+            
+            // CRITICAL: _newobj() already outputs "N 0 obj"
+            // We just need to output the content and "endobj"
+            $this->_out($out);
+            
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                sprintf("StructElem %d: /%s (frame %d, parent obj %d)", 
+                    $objId, $pdfTag, $semantic->id, $parentObjId)
+            );
         }
         
         // Create Link StructElems for annotations (PDF/UA 7.18.5 requirement)
@@ -370,7 +465,23 @@ class AccessibleTCPDF extends TCPDF
         }
         
         // Combine all StructElem IDs for Document's /K array
-        $allStructElemObjIds = array_merge($structElemObjIds, $linkStructElemObjIds);
+        // IMPORTANT: Only include TOP-LEVEL elements (parent not in structure tree)
+        // Otherwise we get duplicate references (parent's /K already references children)
+        $topLevelObjIds = [];
+        foreach ($allSemanticElements as $semantic) {
+            $parent = $semantic->findParent($this->semanticElementsRef, false);
+            // Top-level = no parent OR parent not in our structure tree
+            if ($parent === null || !isset($frameIdToObjId[$parent->id])) {
+                $topLevelObjIds[] = $frameIdToObjId[$semantic->id];
+            }
+        }
+        
+        // Links are also top-level (parent is Document)
+        $topLevelObjIds = array_merge($topLevelObjIds, $linkStructElemObjIds);
+        
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+            sprintf("Document /K will reference %d top-level StructElems", count($topLevelObjIds))
+        );
         
         // Output ParentTree (allocate ID immediately before output)
         $parentTreeObjId = $this->_newobj();
@@ -379,15 +490,24 @@ class AccessibleTCPDF extends TCPDF
         // - Annotation's /StructParent N maps to a SINGLE StructElem
         // 
         // Format: /Nums [ 
-        //   0 [10 0 R 11 0 R]   ← Index 0 = Page's MCIDs (array)
+        //   0 [10 0 R 11 0 R]   ← Index 0 = Page's MCIDs (array, ONE entry per MCID!)
         //   1 15 0 R             ← Index 1 = First annotation (single ref)
         //   2 16 0 R             ← Index 2 = Second annotation (single ref)
         // ]
+        //
+        // CRITICAL: The array at index 0 must have ONE entry per MCID in order!
+        // mcidToObjId[0] = first StructElem, mcidToObjId[1] = second StructElem, etc.
         $out = '<< /Nums [';
         
         // Index 0: Array of StructElems for page's MCIDs
+        // Build array in MCID order (0, 1, 2, ...)
         $out .= ' 0 [';
-        $out .= implode(' 0 R ', $structElemObjIds) . ' 0 R';
+        if (!empty($mcidToObjId)) {
+            // Sort by MCID (key) to ensure correct order
+            ksort($mcidToObjId);
+            $mcidObjRefs = array_map(fn($objId) => $objId . ' 0 R', $mcidToObjId);
+            $out .= implode(' ', $mcidObjRefs);
+        }
         $out .= ']';
         
         // Subsequent indices: One per annotation
@@ -401,7 +521,7 @@ class AccessibleTCPDF extends TCPDF
         $this->_out($out);  // _newobj() already output "N 0 obj"
         
         // Output Document container element
-        // CRITICAL: Use calculated $documentObjId from line 487!
+        // CRITICAL: Use calculated $documentObjId from earlier!
         // Call _newobj() to allocate the next ID (which should match our calculation)
         $actualDocumentObjId = $this->_newobj();
         $out = '<<';
@@ -410,13 +530,13 @@ class AccessibleTCPDF extends TCPDF
         // CRITICAL FIX: PDF/UA Rule 7.1 requires ALL StructElems have /P (Parent)
         // Document's parent is the StructTreeRoot
         $out .= sprintf(' /P %d 0 R', $structTreeRootObjId);
-        $out .= ' /K [' . implode(' 0 R ', $allStructElemObjIds) . ' 0 R]';  // Include Links!
+        $out .= ' /K [' . implode(' 0 R ', $topLevelObjIds) . ' 0 R]';  // Only TOP-LEVEL elements!
         $out .= ' >>';
         $out .= "\n".'endobj';
         $this->_out($out);  // _newobj() already output "N 0 obj"
         
         // Output StructTreeRoot
-        // CRITICAL: Use calculated $structTreeRootObjId from line 488!
+        // CRITICAL: Use calculated $structTreeRootObjId from earlier!
         $actualStructTreeRootObjId = $this->_newobj();
         $out = '<<';
         $out .= ' /Type /StructTreeRoot';
@@ -1192,7 +1312,7 @@ class AccessibleTCPDF extends TCPDF
         // For #text nodes, use parent element for tagging
         $tagElement = $semantic;
         if ($semantic->tag === '#text') {
-            $parentSemantic = $this->_findParentSemanticElement($semantic->frameId, false);
+            $parentSemantic = $this->_findParentSemanticElement($semantic->id, false);
             if ($parentSemantic === null) {
                 SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                     "Skipping #text - no parent found, marking as Artifact"
@@ -1217,7 +1337,7 @@ class AccessibleTCPDF extends TCPDF
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 sprintf("Skipping transparent inline tag <%s>, finding semantic parent", $tagElement->tag)
             );
-            $semanticParent = $this->_findParentSemanticElement($tagElement->frameId, true);
+            $semanticParent = $this->_findParentSemanticElement($tagElement->id, true);
             if ($semanticParent === null) {
                 // No semantic parent found - fallback to using this element
                 SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
@@ -1293,7 +1413,7 @@ class AccessibleTCPDF extends TCPDF
         
         // Track this as the active BDC frame
         $this->activeBDCFrame = [
-            'frameId' => $tagElement->frameId,
+            'frameId' => $tagElement->id,
             'pdfTag' => $pdfTag,
             'mcid' => $mcid,
             'semanticId' => $semanticId
