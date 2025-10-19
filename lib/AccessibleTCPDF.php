@@ -50,12 +50,6 @@ class AccessibleTCPDF extends TCPDF
     private bool $pdfua = false;
 
     /**
-     * Saved object counter before Close() for structure tree building
-     * @var int|null
-     */
-    private ?int $savedN = null;
-
-    /**
      * Saved page object IDs before Close() for structure tree building  
      * @var array
      */
@@ -125,45 +119,40 @@ class AccessibleTCPDF extends TCPDF
     {        
         parent::__construct($orientation, $unit, $format, $unicode, $encoding, $diskcache, $pdfa);
 
-        if($pdfua && $semanticElementsRef !== null) {
-            $this->pdfua = true;
+        $this->pdfua = $pdfua === true && $semanticElementsRef !== null;
+        if(!$this->pdfua) return;
 
-            // CRITICAL: Disable "Powered by TCPDF" link (separate from footer!)
-            // This is rendered in Close() method independent of Footer() mechanism
-            // The extra Q operator after the link causes PDF/UA validation errors
-            $this->tcpdflink = false;
-            
-            // PDF/UA REQUIREMENT: All fonts must be embedded (PDF/UA 7.21.4.1)
-            // Force core fonts to be embedded by setting unicode flag
-            $this->isunicode = true;
-            
-            // Replace standard fonts with DejaVu equivalents
-            $this->CoreFonts = [
-                'courier' => 'dejavusansmono',
-                'courierB' => 'dejavusansmono',
-                'courierI' => 'dejavusansmono',
-                'courierBI' => 'dejavusansmono',
-                'helvetica' => 'dejavusans',
-                'helveticaB' => 'dejavusans',
-                'helveticaI' => 'dejavusans',
-                'helveticaBI' => 'dejavusans',
-                'times' => 'dejavuserif',
-                'timesB' => 'dejavuserif',
-                'timesI' => 'dejavuserif',
-                'timesBI' => 'dejavuserif',
-                'symbol' => 'dejavusans',
-                'zapfdingbats' => 'dejavusans'
-            ];
-            
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                "PDF/UA mode: Core fonts redirected to DejaVu for embedding compliance."
-            );
-        }
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "PDF/UA mode enabled.");
+
+        // CRITICAL: Disable "Powered by TCPDF" link (separate from footer!)
+        // This is rendered in Close() method independent of Footer() mechanism
+        // The extra Q operator after the link causes PDF/UA validation errors
+        $this->tcpdflink = false;
         
-        // Store reference to semantic elements
-        if ($semanticElementsRef !== null) {
-            $this->semanticElementsRef = &$semanticElementsRef;
-        }
+        // PDF/UA REQUIREMENT: All fonts must be embedded (PDF/UA 7.21.4.1)
+        // Force core fonts to be embedded by setting unicode flag
+        $this->isunicode = true;
+        
+        // Replace standard fonts with DejaVu equivalents
+        $this->CoreFonts = [
+            'courier' => 'dejavusansmono',
+            'courierB' => 'dejavusansmono',
+            'courierI' => 'dejavusansmono',
+            'courierBI' => 'dejavusansmono',
+            'helvetica' => 'dejavusans',
+            'helveticaB' => 'dejavusans',
+            'helveticaI' => 'dejavusans',
+            'helveticaBI' => 'dejavusans',
+            'times' => 'dejavuserif',
+            'timesB' => 'dejavuserif',
+            'timesI' => 'dejavuserif',
+            'timesBI' => 'dejavuserif',
+            'symbol' => 'dejavusans',
+            'zapfdingbats' => 'dejavusans'
+        ];
+        
+        // Store reference to semantic elements from Canvas
+        $this->semanticElementsRef = &$semanticElementsRef;
     }
 
     // ========================================================================
@@ -423,6 +412,58 @@ class AccessibleTCPDF extends TCPDF
             'struct_tree_root_obj_id' => $structTreeRootObjId,
             'document_obj_id' => $documentObjId
         ];
+    }
+
+    /**
+     * Extract graphics-state line from cellCode
+     * 
+     * CRITICAL: veraPDF treats ANY graphics operation (even empty 'q') as untagged contentItem!
+     * We must extract ALL graphics operations including q/Q.
+     * 
+     * Pattern in TCPDF output:
+     * "0.570000 w 0 J 0 j [] 0 d 0 G 0 g\nq 0.000000 0.000000 0.000000 rg BT 0 Tr 0.000000 w ET BT ... TJ ET Q"
+     * 
+     * We extract EVERYTHING except the actual text rendering "BT ... TJ ET":
+     * 1. "0.570000 w 0 J 0 j [] 0 d 0 G 0 g" → Artifact
+     * 2. "q 0.000000 0.000000 0.000000 rg" → Artifact  
+     * 3. "BT 0 Tr 0.000000 w ET" → Artifact
+     * 4. "Q" → Artifact
+     * 
+     * And keep inside BDC: "BT ... TJ ET" (ONLY the text)
+     * 
+     * @param string $cellCode Original PDF code from parent::getCellCode()
+     * @return array [$graphicsLines, $cleanedCellCode]
+     * @protected
+     */
+    protected function _extractGraphicsOps($cellCode) {
+        $graphicsLines = [];
+        
+        // Extract first line if it's graphics-state
+        $lines = explode("\n", $cellCode, 2);
+        if (count($lines) >= 2 && preg_match('/^[\d\.]+ w [\d]+ J [\d]+ j \[.*?\] [\d]+ d [\d\.]+ G [\d\.]+ g$/', $lines[0])) {
+            $graphicsLines[] = $lines[0];
+            $cellCode = $lines[1];
+        }
+        
+        // Extract "q ...color... BT 0 Tr 0.000000 w ET" and remove q/Q entirely
+        $cellCode = preg_replace_callback(
+            '/q ([^\n]+?)\s+BT (\d+) Tr ([\d\.]+) w ET\s+(.*?)\s+Q/s',
+            function($matches) use (&$graphicsLines) {
+                // Extract ALL graphics operations
+                $graphicsLines[] = 'q ' . $matches[1];  // Graphics state save + color
+                $graphicsLines[] = 'BT ' . $matches[2] . ' Tr ' . $matches[3] . ' w ET';  // Render mode
+                $graphicsLines[] = 'Q';  // Graphics state restore
+                // Return ONLY the text rendering part (without q/Q)
+                return $matches[4];
+            },
+            $cellCode
+        );
+        
+        if (empty($graphicsLines)) {
+            return ['', $cellCode];
+        }
+        
+        return [implode("\n", $graphicsLines), $cellCode];
     }
 
     // ========================================================================
@@ -708,65 +749,13 @@ class AccessibleTCPDF extends TCPDF
     }
 
     /**
-     * Extract graphics-state line from cellCode
-     * 
-     * CRITICAL: veraPDF treats ANY graphics operation (even empty 'q') as untagged contentItem!
-     * We must extract ALL graphics operations including q/Q.
-     * 
-     * Pattern in TCPDF output:
-     * "0.570000 w 0 J 0 j [] 0 d 0 G 0 g\nq 0.000000 0.000000 0.000000 rg BT 0 Tr 0.000000 w ET BT ... TJ ET Q"
-     * 
-     * We extract EVERYTHING except the actual text rendering "BT ... TJ ET":
-     * 1. "0.570000 w 0 J 0 j [] 0 d 0 G 0 g" → Artifact
-     * 2. "q 0.000000 0.000000 0.000000 rg" → Artifact  
-     * 3. "BT 0 Tr 0.000000 w ET" → Artifact
-     * 4. "Q" → Artifact
-     * 
-     * And keep inside BDC: "BT ... TJ ET" (ONLY the text)
-     * 
-     * @param string $cellCode Original PDF code from parent::getCellCode()
-     * @return array [$graphicsLines, $cleanedCellCode]
-     * @protected
-     */
-    protected function _extractGraphicsOps($cellCode) {
-        $graphicsLines = [];
-        
-        // Extract first line if it's graphics-state
-        $lines = explode("\n", $cellCode, 2);
-        if (count($lines) >= 2 && preg_match('/^[\d\.]+ w [\d]+ J [\d]+ j \[.*?\] [\d]+ d [\d\.]+ G [\d\.]+ g$/', $lines[0])) {
-            $graphicsLines[] = $lines[0];
-            $cellCode = $lines[1];
-        }
-        
-        // Extract "q ...color... BT 0 Tr 0.000000 w ET" and remove q/Q entirely
-        $cellCode = preg_replace_callback(
-            '/q ([^\n]+?)\s+BT (\d+) Tr ([\d\.]+) w ET\s+(.*?)\s+Q/s',
-            function($matches) use (&$graphicsLines) {
-                // Extract ALL graphics operations
-                $graphicsLines[] = 'q ' . $matches[1];  // Graphics state save + color
-                $graphicsLines[] = 'BT ' . $matches[2] . ' Tr ' . $matches[3] . ' w ET';  // Render mode
-                $graphicsLines[] = 'Q';  // Graphics state restore
-                // Return ONLY the text rendering part (without q/Q)
-                return $matches[4];
-            },
-            $cellCode
-        );
-        
-        if (empty($graphicsLines)) {
-            return ['', $cellCode];
-        }
-        
-        return [implode("\n", $graphicsLines), $cellCode];
-    }
-
-    /**
      * Override _putresources() to output structure tree objects BEFORE catalog
      * This ensures xref table is correctly built
      */
     protected function _putresources()
     {
         // CRITICAL: Close any open BDC block before finalizing the document
-        if ($this->activeBDCFrame !== null) {
+        if ($this->pdfua && $this->activeBDCFrame !== null) {
             // Inject EMC into the current page buffer
             if ($this->state == 2 && isset($this->page)) {
                 $this->setPageBuffer($this->page, "EMC\n", true);
@@ -783,7 +772,6 @@ class AccessibleTCPDF extends TCPDF
             // Save page_obj_id now that _putpages() has been called
             if (property_exists($this, 'page_obj_id') && isset($this->page_obj_id) && is_array($this->page_obj_id)) {
                 $this->savedPageObjIds = $this->page_obj_id;
-                $this->savedN = $this->n;
                 
                 // BUILD structure tree
                 $structureTreeData = $this->_createStructureTree();
