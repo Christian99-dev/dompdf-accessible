@@ -847,12 +847,12 @@ class AccessibleTCPDF extends TCPDF
     }
     
     /**
-     * Override _putcatalog() to add PDF/UA specific entries
-     * Complete override of TCPDF's _putcatalog() with PDF/UA extensions
+     * Override _putcatalog() to add PDF/UA specific entries  
+     * Strategy: Copy TCPDF's logic but inject PDF/UA entries at the right positions
      */
     protected function _putcatalog()
     {
-        // Add DisplayDocTitle to viewer preferences if PDF/UA mode
+        // PDF/UA PATCH 1: Add DisplayDocTitle to viewer preferences
         if ($this->pdfua && !empty($this->structureTree)) {
             if (!isset($this->viewer_preferences)) {
                 $this->viewer_preferences = [];
@@ -860,7 +860,7 @@ class AccessibleTCPDF extends TCPDF
             $this->viewer_preferences['DisplayDocTitle'] = 'true';
         }
         
-        // === COMPLETE TCPDF _putcatalog() LOGIC ===
+        // === START: TCPDF's _putcatalog() logic (slightly simplified) ===
         // put XMP
         $xmpobj = $this->_putXMP();
         // if required, add standard sRGB ICC colour profile
@@ -926,24 +926,19 @@ class AccessibleTCPDF extends TCPDF
         //$out .= ' /URI <<>>';
         $out .= ' /Metadata '.$xmpobj.' 0 R';
         
-        // === PDF/UA EXTENSIONS: Add StructTreeRoot and MarkInfo ===
+        // === PDF/UA PATCH 2 & 3: Add StructTreeRoot, MarkInfo, and Lang ===
         if ($this->pdfua && !empty($this->structureTree) && isset($this->savedStructTreeRootObjId)) {
             $out .= ' /StructTreeRoot ' . $this->savedStructTreeRootObjId . ' 0 R';
             $out .= ' /MarkInfo << /Marked true >>';
-        }
-        
-        // === CONTINUE TCPDF LOGIC ===
-        //$out .= ' /StructTreeRoot <<>>';
-        //$out .= ' /MarkInfo <<>>';
-        
-        // PDF/UA: Use en-US as default language
-        if ($this->pdfua && !empty($this->structureTree)) {
-            $out .= ' /Lang '.$this->_textstring('en-US', $oid);
-        } elseif (isset($this->l['a_meta_language'])) {
+            $out .= ' /Lang '.$this->_textstring('en-US', $oid);  // PDF/UA requires language
+        } 
+        // === ELSE: TCPDF's standard language handling ===
+        elseif (isset($this->l['a_meta_language'])) {
             $out .= ' /Lang '.$this->_textstring($this->l['a_meta_language'], $oid);
         }
+        // Note: TCPDF has /StructTreeRoot and /MarkInfo commented out in original code
         
-        //$out .= ' /SpiderInfo <<>>';
+        // === CONTINUE TCPDF logic ===
         // set OutputIntent to sRGB IEC61966-2.1 if required
         if ($this->pdfa_mode OR $this->force_srgb) {
             $out .= ' /OutputIntents [<<';
@@ -1047,10 +1042,7 @@ class AccessibleTCPDF extends TCPDF
                 }
             }
         }
-        //$out .= ' /Legal <<>>';
-        //$out .= ' /Requirements []';
-        //$out .= ' /Collection <<>>';
-        //$out .= ' /NeedsRendering true';
+        // === END TCPDF logic ===
         $out .= ' >>';
         $out .= "\n".'endobj';
         $this->_out($out);
