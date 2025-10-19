@@ -14,6 +14,11 @@ use Dompdf\SemanticElement;
  * This immutable value object represents the tagging decision
  * for a rendered element.
  * 
+ * THREE MODES:
+ * 1. ARTIFACT: Content wrapped as /Artifact (no structure)
+ * 2. TAGGED: Content wrapped in BDC/EMC with structure tag
+ * 3. TRANSPARENT: Content inherits parent's BDC (styling only, no separate tag)
+ * 
  * @package dompdf-accessible
  */
 class TaggingDecision
@@ -22,6 +27,7 @@ class TaggingDecision
         public readonly ?SemanticElement $element,
         public readonly string $pdfTag,
         public readonly bool $isArtifact,
+        public readonly bool $isTransparent,
         public readonly string $reason = ''
     ) {}
     
@@ -30,7 +36,7 @@ class TaggingDecision
      */
     public static function artifact(string $reason = ''): self
     {
-        return new self(null, '', true, $reason);
+        return new self(null, '', true, false, $reason);
     }
     
     /**
@@ -38,7 +44,18 @@ class TaggingDecision
      */
     public static function tagged(SemanticElement $element, string $pdfTag): self
     {
-        return new self($element, $pdfTag, false, '');
+        return new self($element, $pdfTag, false, false, '');
+    }
+    
+    /**
+     * Create Transparent decision (element only provides styling, no separate BDC)
+     * 
+     * Used for: <strong>, <em>, <span>, etc.
+     * These elements change font/color but don't create structure elements.
+     */
+    public static function transparent(string $reason = ''): self
+    {
+        return new self(null, '', false, true, $reason);
     }
 }
 
@@ -108,12 +125,12 @@ class TaggingManager
      * This is the MAIN method that implements the complete tagging logic:
      * 1. No semantic element → Artifact (e.g., TCPDF footer)
      * 2. Decorative element → Artifact (aria-hidden, role=presentation)
-     * 3. #text node → Use parent element
-     * 4. Transparent inline tag → Use semantic parent (skip strong, em, span)
+     * 3. Transparent inline tag → Transparent (styling only, no BDC)
+     * 4. #text node → Use parent element for tagging
      * 5. Regular element → Tag with PDF structure tag
      * 
      * @param string|null $frameId Current frame ID being rendered
-     * @return TaggingDecision Decision with element, PDF tag, and artifact flag
+     * @return TaggingDecision Decision with element, PDF tag, and mode flags
      */
     public function resolveTagging(?string $frameId): TaggingDecision
     {
@@ -121,7 +138,7 @@ class TaggingManager
         $semantic = $this->getCurrentElement($frameId);
         
         if ($semantic === null) {
-            SimpleLogger::log("tagging_manager", __METHOD__, 
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 "No semantic element for frame {$frameId} → Artifact"
             );
             return TaggingDecision::artifact('No semantic element (e.g., TCPDF footer)');
@@ -129,26 +146,36 @@ class TaggingManager
         
         // STEP 2: Check if decorative
         if ($semantic->isDecorative()) {
-            SimpleLogger::log("tagging_manager", __METHOD__, 
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 sprintf("Element %s is decorative → Artifact", $semantic->id)
             );
             return TaggingDecision::artifact(sprintf('Decorative <%s>', $semantic->tag));
         }
         
-        // STEP 3: Resolve actual tagging element
+        // STEP 3: Check if transparent inline tag (BEFORE resolving parent!)
+        // These tags (strong, em, span) should NOT create BDC blocks
+        if ($semantic->isTransparentInlineTag()) {
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                sprintf("Element %s is transparent <%s> → Transparent (styling only)", 
+                    $semantic->id, $semantic->tag)
+            );
+            return TaggingDecision::transparent(sprintf('Transparent <%s>', $semantic->tag));
+        }
+        
+        // STEP 4: Resolve actual tagging element (for #text nodes)
         $tagElement = $this->resolveTaggingElement($semantic);
         
         if ($tagElement === null) {
-            SimpleLogger::log("tagging_manager", __METHOD__, 
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 sprintf("Could not resolve tagging element for %s → Artifact", $semantic->id)
             );
             return TaggingDecision::artifact('No tagging element resolved');
         }
         
-        // STEP 4: Get PDF tag and create decision
+        // STEP 5: Get PDF tag and create decision
         $pdfTag = $tagElement->getPdfStructureTag();
         
-        SimpleLogger::log("tagging_manager", __METHOD__, 
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
             sprintf("Resolved frame %s: <%s> → /%s", 
                 $frameId, $tagElement->tag, $pdfTag)
         );
@@ -161,8 +188,10 @@ class TaggingManager
      * 
      * Handles special cases:
      * - #text nodes → use parent
-     * - Transparent inline tags (strong, em, span) → use semantic parent
      * - Regular elements → use as-is
+     * 
+     * Note: Transparent inline tags are handled in resolveTagging() 
+     * and never reach this method.
      * 
      * @param SemanticElement $semantic The semantic element
      * @return SemanticElement|null The element to use for tagging
@@ -174,40 +203,20 @@ class TaggingManager
             $parent = $this->findParentElement($semantic->id, false);
             
             if ($parent === null) {
-                SimpleLogger::log("tagging_manager", __METHOD__, 
+                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                     "No parent found for #text node {$semantic->id}"
                 );
                 return null;
             }
             
-            SimpleLogger::log("tagging_manager", __METHOD__, 
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 sprintf("Using parent <%s> for #text node", $parent->tag)
             );
             
             return $parent;
         }
         
-        // CASE 2: Transparent inline styling tag → use semantic parent
-        if ($semantic->isTransparentInlineTag()) {
-            $semanticParent = $this->findParentElement($semantic->id, true);
-            
-            if ($semanticParent === null) {
-                SimpleLogger::log("tagging_manager", __METHOD__, 
-                    sprintf("Warning: No semantic parent for transparent <%s>, using anyway", 
-                        $semantic->tag)
-                );
-                return $semantic; // Fallback to using the tag itself
-            }
-            
-            SimpleLogger::log("tagging_manager", __METHOD__, 
-                sprintf("Skipping transparent <%s> → using parent <%s>", 
-                    $semantic->tag, $semanticParent->tag)
-            );
-            
-            return $semanticParent;
-        }
-        
-        // CASE 3: Regular element → use as-is
+        // CASE 2: Regular element → use as-is
         return $semantic;
     }
     

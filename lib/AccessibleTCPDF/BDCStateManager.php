@@ -6,6 +6,9 @@
  */
 
 use Dompdf\SimpleLogger;
+use Dompdf\SemanticElement;
+
+require_once __DIR__ . '/BDCAction.php';
 
 /**
  * BDC State Manager - Manages BDC/EMC lifecycle and nesting
@@ -134,7 +137,7 @@ class BDCStateManager
         $this->bdcDepth++;
         
         // Log state change
-        SimpleLogger::log("bdc_state_manager", __METHOD__, 
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
             sprintf("Opened BDC: /%s MCID=%d for frame %s (depth=%d)", 
                 $pdfTag, $mcid, $semanticId, $this->bdcDepth)
         );
@@ -161,7 +164,7 @@ class BDCStateManager
         $this->bdcDepth--;
         
         // Log state change
-        SimpleLogger::log("bdc_state_manager", __METHOD__, 
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
             sprintf("Closed BDC for frame %s (depth=%d)", 
                 $this->activeBDCFrame['semanticId'], $this->bdcDepth)
         );
@@ -228,6 +231,56 @@ class BDCStateManager
         $this->activeBDCFrame = null;
         $this->bdcDepth = 0;
         
-        SimpleLogger::log("bdc_state_manager", __METHOD__, "State reset");
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "State reset");
+    }
+    
+    /**
+     * Determine BDC Action based on current state and target element
+     * 
+     * This is the CORE of the two-phase architecture:
+     * - PHASE 1: Tagging Manager determines WHAT to tag (semantic resolution)
+     * - PHASE 2: BDC Manager determines WHEN to open/close BDC (lifecycle)
+     * 
+     * This method bridges the two phases by considering:
+     * 1. Current BDC state (what's open now)
+     * 2. Target element (what should be open)
+     * 3. Transparency (should we skip BDC entirely)
+     * 4. Artifact status (should we close and wrap)
+     * 
+     * @param string $currentFrameId Current frame ID from renderer
+     * @param SemanticElement|null $targetElement Resolved target element (after transparency resolution)
+     * @param bool $isTransparent Is this a transparent inline tag?
+     * @param bool $isArtifact Is this artifact content?
+     * @return BDCAction Action to take
+     */
+    public function determineBDCAction(
+        string $currentFrameId,
+        ?SemanticElement $targetElement,
+        bool $isTransparent,
+        bool $isArtifact
+    ): BDCAction {
+        // CASE 1: Artifact content → Close BDC and wrap as Artifact
+        if ($isArtifact) {
+            return BDCAction::closeAndArtifact();
+        }
+        
+        // CASE 2: Transparent tag → Continue in parent's BDC (no new BDC)
+        if ($isTransparent) {
+            return BDCAction::continue('Transparent inline tag inherits parent BDC');
+        }
+        
+        // CASE 3: No target element → Continue (NULL semantic, inherits context)
+        if ($targetElement === null) {
+            return BDCAction::continue('NULL semantic inherits parent BDC');
+        }
+        
+        // CASE 4: Check if new BDC needed based on target element ID
+        // Use target element's ID (not currentFrameId!) for BDC transition check
+        if ($this->shouldOpenNewBDC($targetElement->id)) {
+            return BDCAction::openNew();
+        }
+        
+        // CASE 5: Same element → Continue in current BDC
+        return BDCAction::continue('Same element, continue current BDC');
     }
 }

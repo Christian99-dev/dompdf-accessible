@@ -77,7 +77,7 @@ class ContentWrapperManager
         // Log if injection happened
         if ($modifiedCode !== $cellCode) {
             $count = substr_count($modifiedCode, $tfOperator);
-            SimpleLogger::log("content_wrapper_manager", __METHOD__, 
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 sprintf("Injected Tf operator %d times: %s", $count, $tfOperator)
             );
         }
@@ -96,7 +96,7 @@ class ContentWrapperManager
      */
     public function wrapAsArtifact(string $pdfCode): string
     {
-        SimpleLogger::log("content_wrapper_manager", __METHOD__, 
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
             sprintf("Wrapping as Artifact (%d bytes)", strlen($pdfCode))
         );
         
@@ -121,7 +121,7 @@ class ContentWrapperManager
         if (isset(self::PDFUA_FONT_MAP[$familyLower])) {
             $mapped = self::PDFUA_FONT_MAP[$familyLower];
             
-            SimpleLogger::log("content_wrapper_manager", __METHOD__, 
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 sprintf("PDF/UA: Redirected font '%s' → '%s' for embedding", 
                     $family, $mapped)
             );

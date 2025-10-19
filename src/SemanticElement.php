@@ -289,7 +289,7 @@ class SemanticElement
         }
         
         // If skipping transparent tags, recursively find non-transparent parent
-        if ($skipTransparentTags && $parent->isTransparentTag()) {
+        if ($skipTransparentTags && $parent->isTransparentInlineTag()) {
             return $parent->findParent($semanticRegistry, true);
         }
         
