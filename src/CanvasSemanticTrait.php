@@ -27,10 +27,21 @@ trait CanvasSemanticTrait
     /**
      * Storage for semantic information
      * Maps element IDs to their SemanticElement objects
+     * ONLY contains elements that should get StructElems in PDF!
      * 
      * @var SemanticElement[]
      */
     protected array $_semantic_elements = [];
+    
+    /**
+     * Storage for transparent inline tags (span, strong, em, etc.)
+     * These are tracked separately to maintain correct Frame ID sequence
+     * but do NOT get StructElems in PDF structure tree.
+     * Used for context queries (e.g., text-decoration detection).
+     * 
+     * @var SemanticElement[]
+     */
+    protected array $_transparent_elements = [];
     
     /**
      * Register a semantic element
@@ -46,12 +57,15 @@ trait CanvasSemanticTrait
     public function registerSemanticElement(SemanticElement $semanticElement): void
     {
         // OPTIMIZATION: Skip transparent inline tags - they don't need structure elements
+        // Store them separately to maintain correct Frame ID sequence for MCID mapping
         if ($semanticElement->isTransparentInlineTag()) {
+            $this->_transparent_elements[$semanticElement->id] = $semanticElement;
+            
             SimpleLogger::log(
                 "canvas_semantic_trait_logs",
                 "registerSemanticElement()",
                 sprintf(
-                    "SKIPPED transparent tag: %s | %s (styling only, no structure)",
+                    "TRANSPARENT (styling only): %s | %s [stored separately]",
                     $semanticElement->id,
                     $semanticElement
                 )
@@ -70,7 +84,8 @@ trait CanvasSemanticTrait
                 $semanticElement
             )
         );  
-    }    /**
+    }    
+    /**
      * Set current frame ID - TUNNEL to backend
      * This method forwards the frame ID directly to AccessibleTCPDF
      * 
