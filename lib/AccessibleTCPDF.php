@@ -1307,10 +1307,10 @@ class AccessibleTCPDF extends TCPDF
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 "Line outside BDC → Decorative (Artifact wrap)"
             );
-            $this->_wrapDrawingAsArtifact(function() use ($x1, $y1, $x2, $y2, $style) {
-                parent::Line($x1, $y1, $x2, $y2, $style);
-            });
-        }
+        $this->_wrapDrawingAsArtifact(function() use ($x1, $y1, $x2, $y2, $style) {
+            parent::Line($x1, $y1, $x2, $y2, $style);
+        });
+    }
     }
 
     // /**
