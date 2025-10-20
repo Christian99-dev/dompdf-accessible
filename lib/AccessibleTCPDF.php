@@ -65,14 +65,7 @@ class AccessibleTCPDF extends TCPDF
      * @var SemanticElement[]|null
      */
     private ?array $semanticElementsRef = null;
-    
-    /**
-     * Reference to transparent elements storage from Canvas
-     * This is a direct reference to the $_transparent_elements array from CanvasSemanticTrait
-     * @var SemanticElement[]|null
-     */
-    private ?array $transparentElementsRef = null;
-    
+
     /**
      * Current frame ID being rendered
      * @var string|null
@@ -135,7 +128,6 @@ class AccessibleTCPDF extends TCPDF
      * @param boolean $pdfa Enable PDF/A mode 
      * @param boolean $pdfua Enable PDF/UA mode
      * @param array|null $semanticElementsRef Reference to semantic elements array from Canvas
-     * @param array|null $transparentElementsRef Reference to transparent elements array from Canvas
      */
     public function __construct(
         $orientation = 'P', 
@@ -147,7 +139,6 @@ class AccessibleTCPDF extends TCPDF
         $pdfa = false, 
         $pdfua = false,
         ?array &$semanticElementsRef = null,
-        ?array &$transparentElementsRef = null
     ) 
     {        
         parent::__construct($orientation, $unit, $format, $unicode, $encoding, $diskcache, $pdfa);
@@ -185,7 +176,6 @@ class AccessibleTCPDF extends TCPDF
         
         // Store reference to semantic elements from Canvas
         $this->semanticElementsRef = &$semanticElementsRef;
-        $this->transparentElementsRef = &$transparentElementsRef;
         
         // BDC State Manager - No dependencies
         $this->bdcManager = new BDCStateManager();
