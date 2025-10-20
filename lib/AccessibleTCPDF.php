@@ -15,6 +15,8 @@ require_once __DIR__ . '/AccessibleTCPDF/BDCAction.php';
 require_once __DIR__ . '/AccessibleTCPDF/BDCStateManager.php';
 require_once __DIR__ . '/AccessibleTCPDF/TaggingManager.php';
 require_once __DIR__ . '/AccessibleTCPDF/ContentWrapperManager.php';
+require_once __DIR__ . '/AccessibleTCPDF/DrawingContext.php';
+require_once __DIR__ . '/AccessibleTCPDF/DrawingContextManager.php';
 
 /**
  * AccessibleTCPDF - PDF/UA compatible TCPDF extension
@@ -45,6 +47,12 @@ class AccessibleTCPDF extends TCPDF
      * @var ContentWrapperManager
      */
     private ContentWrapperManager $contentWrapper;
+    
+    /**
+     * Drawing Context Manager - Determines how to handle drawing operations
+     * @var DrawingContextManager
+     */
+    private DrawingContextManager $drawingContextManager;
     
     // ========================================================================
     // LEGACY STATE (will be moved to managers)
@@ -176,6 +184,9 @@ class AccessibleTCPDF extends TCPDF
         
         // Content Wrapper Manager - No dependencies
         $this->contentWrapper = new ContentWrapperManager();
+        
+        // Drawing Context Manager - Needs semantic elements reference
+        $this->drawingContextManager = new DrawingContextManager($this->semanticElementsRef);
     }
 
     /**
@@ -507,15 +518,27 @@ class AccessibleTCPDF extends TCPDF
     }
 
     /**
-     * Wrap a drawing operation as Artifact with BDC lifecycle management
+     * Wrap a drawing operation for PDF/UA compliance
      * 
-     * GENERIC HELPER for all drawing methods (Line, Rect, Circle, etc.)
-     * Implements the Close-Draw-Reopen BDC pattern:
-     * 1. If inside BDC: close it temporarily
-     * 2. Draw as Artifact
-     * 3. Reopen BDC with same tag and MCID
+     * ARCHITECTURE (v6 - Manager-Based Context Resolution):
+     * =====================================================
+     * Uses DrawingContextManager to determine the correct handling
+     * based on semantic analysis of the current element.
      * 
-     * This fixes the Adobe bug where clicking on semantic tags selects graphics.
+     * THREE CASES:
+     * 1. CONTENT: Drawing is part of semantic content (text-decoration)
+     *    → Keep inside BDC, do NOT wrap
+     * 
+     * 2. DECORATIVE_INSIDE_TAG: Drawing is decorative but BDC is open
+     *    → Close-Artifact-Continue pattern
+     * 
+     * 3. ARTIFACT: No active BDC, drawing is purely decorative
+     *    → Wrap as /Artifact BMC ... EMC
+     * 
+     * The DrawingContextManager analyzes:
+     * - Current BDC state (from BDCStateManager)
+     * - Semantic element properties (text-decoration, tag type)
+     * - Returns clear decision via DrawingContext
      * 
      * @param callable $drawCallback The drawing operation to execute
      * @return void
@@ -534,20 +557,20 @@ class AccessibleTCPDF extends TCPDF
         if ($activeBDC !== null) {
             // PATTERN: Close-Draw-Reopen
             // We're inside a BDC block - temporarily close it
-            parent::_out('EMC');
-            
+                parent::_out('EMC');
+                
             // Draw as Artifact
-            parent::_out('/Artifact BMC');
-            $drawCallback();
-            parent::_out('EMC');
+                parent::_out('/Artifact BMC');
+                $drawCallback();
+                parent::_out('EMC');
             
             // Reopen the BDC block with same tag and MCID
             parent::_out('/' . $activeBDC['pdfTag'] . ' << /MCID ' . $activeBDC['mcid'] . ' >> BDC');
         } else {
             // Not inside BDC - simply wrap as Artifact
-            parent::_out('/Artifact BMC');
-            $drawCallback();
-            parent::_out('EMC');
+                parent::_out('/Artifact BMC');
+                $drawCallback();
+                parent::_out('EMC');
         }
     }
 
@@ -1265,17 +1288,17 @@ class AccessibleTCPDF extends TCPDF
         return $result . $cellCode;
     }
 
-    /**
-     * Override Line() to wrap border drawing as Artifact
-     * 
-     * Uses generic _wrapDrawingAsArtifact() helper.
-     * This fixes the Adobe bug where clicking on <P> selects table borders.
-     */
-    public function Line($x1, $y1, $x2, $y2, $style=array()) {
-        $this->_wrapDrawingAsArtifact(function() use ($x1, $y1, $x2, $y2, $style) {
-            parent::Line($x1, $y1, $x2, $y2, $style);
-        });
-    }
+    // /**
+    //  * Override Line() to wrap border drawing as Artifact
+    //  * 
+    //  * Uses generic _wrapDrawingAsArtifact() helper.
+    //  * This fixes the Adobe bug where clicking on <P> selects table borders.
+    //  */
+    // public function Line($x1, $y1, $x2, $y2, $style=array()) {
+    //     $this->_wrapDrawingAsArtifact(function() use ($x1, $y1, $x2, $y2, $style) {
+    //         parent::Line($x1, $y1, $x2, $y2, $style);
+    //     });
+    // }
 
     // /**
     //  * Override Rect() to wrap rectangle drawing as Artifact
