@@ -29,23 +29,23 @@ class DrawingManager
      * 
      * @param string $operationName Name for logging (Line, Rect, etc.)
      * @param string|null $currentFrameId Current frame being processed
-     * @param BDCStateManager $bdcManager BDC state manager
+     * @param array|null $activeBDC Reference to active BDC frame
+     * @param bool $isInsideTaggedContent Whether we are currently inside tagged content
      * @param array|null $semanticElementsRef Reference to semantic elements
      * @return array ['should_close_bdc' => bool, 'wrap_as_artifact' => bool]
      */
-    public static function analyzeDrawingContext(
+    public function analyzeDrawingContext(
         string $operationName, 
         ?string $currentFrameId, 
-        BDCStateManager $bdcManager,
+        bool $isInsideTaggedContent,
+        ?array $activeBDC,
         ?array $semanticElementsRef
     ): array {
-        $activeBDC = $bdcManager->getActiveBDCFrame();
-        
         SimpleLogger::log("accessible_tcpdf_logs", $operationName, sprintf(
             "FRAME_ID: %s | ACTIVE_BDC: %s | INSIDE_BDC: %s",
             $currentFrameId ?? 'NULL',
             $activeBDC['semanticId'] ?? 'NONE', 
-            $bdcManager->isInsideTaggedContent() ? 'true' : 'false'
+            $isInsideTaggedContent ? 'true' : 'false'
         ));
         
         // No BDC active → Always wrap as Artifact
@@ -101,7 +101,7 @@ class DrawingManager
      * @param SemanticElement|null $element The element being drawn
      * @return bool True if this is table-related drawing
      */
-    public static function isTableRelatedDrawing($element): bool 
+    public function isTableRelatedDrawing($element): bool 
     {
         if (!$element) return false;
         
@@ -111,14 +111,11 @@ class DrawingManager
     
     /**
      * Generate PDF operators for wrapping drawing as Artifact
-     * 
-     * @param BDCStateManager $bdcManager BDC state manager  
-     * @return array ['before' => string, 'after' => string] PDF operators
+     *
+     * @param array $activeBDC The currently active BDC frame data 
      */
-    public static function getArtifactWrapOperators(BDCStateManager $bdcManager): array
+    public function getArtifactWrapOperators(?array $activeBDC): array
     {
-        $activeBDC = $bdcManager->getActiveBDCFrame();
-        
         if ($activeBDC !== null) {
             // UNIVERSAL PATTERN: Close-Draw-Reopen
             // Works for: table borders, text-decoration underlines, any graphics

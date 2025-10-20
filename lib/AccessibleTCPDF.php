@@ -46,6 +46,12 @@ class AccessibleTCPDF extends TCPDF
      * @var ContentWrapperManager
      */
     private ContentWrapperManager $contentWrapper;
+
+    /**
+     * Drawing Manager - Static helper for drawing decisions
+     * @var DrawingManager
+     */
+    private DrawingManager $drawingManager;
     
 
     
@@ -190,7 +196,8 @@ class AccessibleTCPDF extends TCPDF
         // Content Wrapper Manager - No dependencies
         $this->contentWrapper = new ContentWrapperManager();
         
-        // Drawing Manager is static - no initialization needed
+        // Drawing Manager - No dependencies
+        $this->drawingManager = new DrawingManager();
     }
 
     /**
@@ -540,10 +547,11 @@ class AccessibleTCPDF extends TCPDF
         }
         
         // Get decision from DrawingManager
-        $context = DrawingManager::analyzeDrawingContext(
+        $context = $this->drawingManager->analyzeDrawingContext(
             $operationName, 
             $this->currentFrameId, 
-            $this->bdcManager, 
+            $this->bdcManager->isInsideTaggedContent(),
+            $this->bdcManager->getActiveBDCFrame(),
             $this->semanticElementsRef
         );
         
@@ -555,7 +563,7 @@ class AccessibleTCPDF extends TCPDF
         // Execute drawing operation
         if ($context['wrap_as_artifact']) {
             // Get Artifact wrapper operators from DrawingManager
-            $operators = DrawingManager::getArtifactWrapOperators($this->bdcManager);
+            $operators = $this->drawingManager->getArtifactWrapOperators($this->bdcManager->getActiveBDCFrame());
             $this->_out($operators['before']);
             $drawingCallback();
             $this->_out($operators['after']);
