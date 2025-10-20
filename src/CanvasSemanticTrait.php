@@ -45,21 +45,7 @@ trait CanvasSemanticTrait
      * @param SemanticElement|array $semanticData Either a SemanticElement object or legacy array format
      */
     public function registerSemanticElement(SemanticElement $semanticElement): void
-    {
-        // OPTIMIZATION: Skip transparent inline tags - they don't need structure elements
-        if ($semanticElement->isTransparentInlineTag()) {
-            SimpleLogger::log(
-                "canvas_semantic_trait_logs",
-                "registerSemanticElement()",
-                sprintf(
-                    "TRANSPARENT INLINE TAG - Skipping StructElem registration: %s | %s",
-                    $semanticElement->id,
-                    $semanticElement
-                )
-            );
-            return;
-        }
-        
+    {        
         $this->_semantic_elements[$semanticElement->id] = $semanticElement;
         
         SimpleLogger::log(
