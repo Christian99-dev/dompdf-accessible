@@ -1283,15 +1283,34 @@ class AccessibleTCPDF extends TCPDF
     }
 
     /**
-     * Override Line() to wrap border drawing as Artifact
+     * Override Line() with smart context detection
      * 
-     * Uses generic _wrapDrawingAsArtifact() helper.
-     * This fixes the Adobe bug where clicking on <P> selects table borders.
+     * CONTEXT-AWARE LOGIC:
+     * - Inside BDC (tagged content) → Text decoration, draw directly (no Artifact wrap)
+     * - Outside BDC → Table borders, etc., wrap as Artifact
+     * 
+     * This fixes the issue where text-decoration underlines were incorrectly
+     * wrapped as Artifacts instead of being part of the semantic text content.
      */
     public function Line($x1, $y1, $x2, $y2, $style=array()) {
-        $this->_wrapDrawingAsArtifact(function() use ($x1, $y1, $x2, $y2, $style) {
+        // Check if we're inside tagged content
+        if ($this->bdcManager->isInsideTaggedContent()) {
+            // CASE 1: Inside BDC → Text decoration (underline, overline, line-through)
+            // Draw directly without Artifact wrapping - it's part of the text semantics
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                "Line inside BDC → Text decoration (no Artifact wrap)"
+            );
             parent::Line($x1, $y1, $x2, $y2, $style);
-        });
+        } else {
+            // CASE 2: Outside BDC → Table borders, decorative lines
+            // Wrap as Artifact to prevent screenreader selection issues
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                "Line outside BDC → Decorative (Artifact wrap)"
+            );
+            $this->_wrapDrawingAsArtifact(function() use ($x1, $y1, $x2, $y2, $style) {
+                parent::Line($x1, $y1, $x2, $y2, $style);
+            });
+        }
     }
 
     // /**
