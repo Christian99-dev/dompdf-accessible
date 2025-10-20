@@ -14,7 +14,7 @@ use Dompdf\FontMetrics;
 use Dompdf\SimpleLogger;
 
 // Include our local AccessibleTCPDF
-require_once __DIR__ . '/../../lib/AccessibleTCPDF.php';
+require_once __DIR__ . '/../../lib/AccessibleTCPDF/AccessibleTCPDF.php';
 use AccessibleTCPDF;
 
 /**

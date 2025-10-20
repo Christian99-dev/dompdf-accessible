@@ -8,14 +8,14 @@
 use Dompdf\SimpleLogger;
 use Dompdf\SemanticElement;
 
-require_once __DIR__ . '/../lib/tcpdf/tcpdf.php';
+require_once __DIR__ . '/tcpdf/tcpdf.php';
 
 // Load Accessibility Managers
-require_once __DIR__ . '/AccessibleTCPDF/BDCAction.php';
-require_once __DIR__ . '/AccessibleTCPDF/BDCStateManager.php';
-require_once __DIR__ . '/AccessibleTCPDF/TaggingManager.php';
-require_once __DIR__ . '/AccessibleTCPDF/ContentWrapperManager.php';
-require_once __DIR__ . '/AccessibleTCPDF/DrawingManager.php';
+require_once __DIR__ . '/BDCAction.php';
+require_once __DIR__ . '/BDCStateManager.php';
+require_once __DIR__ . '/TaggingManager.php';
+require_once __DIR__ . '/ContentWrapperManager.php';
+require_once __DIR__ . '/DrawingManager.php';
 
 /**
  * AccessibleTCPDF - PDF/UA compatible TCPDF extension

@@ -7,7 +7,7 @@
 namespace Dompdf;
 
 // Include our AccessibleTCPDF class
-require_once __DIR__ . '/../lib/AccessibleTCPDF.php';
+require_once __DIR__ . '/../lib/AccessibleTCPDF/AccessibleTCPDF.php';
 
 /**
  * Create canvas instances
