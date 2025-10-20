@@ -15,8 +15,6 @@ require_once __DIR__ . '/AccessibleTCPDF/BDCAction.php';
 require_once __DIR__ . '/AccessibleTCPDF/BDCStateManager.php';
 require_once __DIR__ . '/AccessibleTCPDF/TaggingManager.php';
 require_once __DIR__ . '/AccessibleTCPDF/ContentWrapperManager.php';
-require_once __DIR__ . '/AccessibleTCPDF/DrawingContext.php';
-require_once __DIR__ . '/AccessibleTCPDF/DrawingContextManager.php';
 
 /**
  * AccessibleTCPDF - PDF/UA compatible TCPDF extension
@@ -47,12 +45,6 @@ class AccessibleTCPDF extends TCPDF
      * @var ContentWrapperManager
      */
     private ContentWrapperManager $contentWrapper;
-    
-    /**
-     * Drawing Context Manager - Determines how to handle drawing operations
-     * @var DrawingContextManager
-     */
-    private DrawingContextManager $drawingContextManager;
     
     // ========================================================================
     // LEGACY STATE (will be moved to managers)
@@ -194,12 +186,6 @@ class AccessibleTCPDF extends TCPDF
         
         // Content Wrapper Manager - No dependencies
         $this->contentWrapper = new ContentWrapperManager();
-        
-        // Drawing Context Manager - Needs both array references
-        $this->drawingContextManager = new DrawingContextManager(
-            $this->semanticElementsRef,
-            $this->transparentElementsRef
-        );
     }
 
     /**
@@ -533,25 +519,23 @@ class AccessibleTCPDF extends TCPDF
     /**
      * Wrap a drawing operation for PDF/UA compliance
      * 
-     * ARCHITECTURE (v6 - Manager-Based Context Resolution):
-     * =====================================================
-     * Uses DrawingContextManager to determine the correct handling
-     * based on semantic analysis of the current element.
+     * ARCHITECTURE (v7 - Simplified Universal Pattern):
+     * =================================================
+     * ALL drawing operations (Line, Rect, etc.) use the SAME pattern:
+     * - If BDC active: Close-Draw-Reopen (maintains MCID continuity)
+     * - If no BDC: Simple Artifact wrap
      * 
-     * THREE CASES:
-     * 1. CONTENT: Drawing is part of semantic content (text-decoration)
-     *    → Keep inside BDC, do NOT wrap
+     * WHY THIS WORKS:
+     * - PDF/UA forbids path operators (m, l, S, re, f) inside tagged content
+     * - Text-decoration underlines ARE path operators (TCPDF's _dounderlinew generates 're f')
+     * - Table borders are also path operators
+     * - NO DIFFERENCE between them on PDF operator level!
      * 
-     * 2. DECORATIVE_INSIDE_TAG: Drawing is decorative but BDC is open
-     *    → Close-Artifact-Continue pattern
-     * 
-     * 3. ARTIFACT: No active BDC, drawing is purely decorative
-     *    → Wrap as /Artifact BMC ... EMC
-     * 
-     * The DrawingContextManager analyzes:
-     * - Current BDC state (from BDCStateManager)
-     * - Semantic element properties (text-decoration, tag type)
-     * - Returns clear decision via DrawingContext
+     * RESULT:
+     * - Text stays in BDC (TJ operators)
+     * - ALL graphics isolated as Artifacts (path operators)
+     * - Same MCID before/after ensures tag continuity
+     * - Tag-Strings contain ONLY text, no "Pfad" ✅
      * 
      * @param callable $drawCallback The drawing operation to execute
      * @return void
@@ -566,34 +550,17 @@ class AccessibleTCPDF extends TCPDF
         }
         
         $activeBDC = $this->bdcManager->getActiveBDCFrame();
-        $currentFrameId = $this->currentFrameId;
         
-        // Determine context using DrawingContextManager
-        $context = $this->drawingContextManager->determineContext($activeBDC, $currentFrameId);
-        
-        if ($context->isContent()) {
-            // CONTENT: Text-decoration (underline, strike-through)
-            // Keep inside BDC as real content
+        if ($activeBDC !== null) {
+            // UNIVERSAL PATTERN: Close-Draw-Reopen
+            // Works for: table borders, text-decoration underlines, any graphics
+            parent::_out('EMC');
+            parent::_out('/Artifact BMC');
             $drawCallback();
-            
-        } elseif ($context->isDecorativeInsideTag()) {
-            // DECORATIVE_INSIDE_TAG: Borders, backgrounds in tagged content
-            // Use Close-Draw-Reopen pattern
-            if ($activeBDC !== null) {
-                parent::_out('EMC');
-                parent::_out('/Artifact BMC');
-                $drawCallback();
-                parent::_out('EMC');
-                parent::_out('/' . $activeBDC['pdfTag'] . ' << /MCID ' . $activeBDC['mcid'] . ' >> BDC');
-            } else {
-                // Fallback: Just artifact
-                parent::_out('/Artifact BMC');
-                $drawCallback();
-                parent::_out('EMC');
-            }
-            
+            parent::_out('EMC');
+            parent::_out('/' . $activeBDC['pdfTag'] . ' << /MCID ' . $activeBDC['mcid'] . ' >> BDC');
         } else {
-            // ARTIFACT: Outside any tagged content
+            // No active BDC: Simple Artifact wrap
             parent::_out('/Artifact BMC');
             $drawCallback();
             parent::_out('EMC');
