@@ -66,6 +66,13 @@ class AccessibleTCPDF extends TCPDF
     private ?array $semanticElementsRef = null;
     
     /**
+     * Reference to transparent elements storage from Canvas
+     * This is a direct reference to the $_transparent_elements array from CanvasSemanticTrait
+     * @var SemanticElement[]|null
+     */
+    private ?array $transparentElementsRef = null;
+    
+    /**
      * Current frame ID being rendered
      * @var string|null
      */
@@ -127,6 +134,7 @@ class AccessibleTCPDF extends TCPDF
      * @param boolean $pdfa Enable PDF/A mode 
      * @param boolean $pdfua Enable PDF/UA mode
      * @param array|null $semanticElementsRef Reference to semantic elements array from Canvas
+     * @param array|null $transparentElementsRef Reference to transparent elements array from Canvas
      */
     public function __construct(
         $orientation = 'P', 
@@ -137,7 +145,8 @@ class AccessibleTCPDF extends TCPDF
         $diskcache = false, 
         $pdfa = false, 
         $pdfua = false,
-        ?array &$semanticElementsRef = null
+        ?array &$semanticElementsRef = null,
+        ?array &$transparentElementsRef = null
     ) 
     {        
         parent::__construct($orientation, $unit, $format, $unicode, $encoding, $diskcache, $pdfa);
@@ -175,6 +184,7 @@ class AccessibleTCPDF extends TCPDF
         
         // Store reference to semantic elements from Canvas
         $this->semanticElementsRef = &$semanticElementsRef;
+        $this->transparentElementsRef = &$transparentElementsRef;
         
         // BDC State Manager - No dependencies
         $this->bdcManager = new BDCStateManager();
@@ -185,8 +195,11 @@ class AccessibleTCPDF extends TCPDF
         // Content Wrapper Manager - No dependencies
         $this->contentWrapper = new ContentWrapperManager();
         
-        // Drawing Context Manager - Needs semantic elements reference
-        $this->drawingContextManager = new DrawingContextManager($this->semanticElementsRef);
+        // Drawing Context Manager - Needs both array references
+        $this->drawingContextManager = new DrawingContextManager(
+            $this->semanticElementsRef,
+            $this->transparentElementsRef
+        );
     }
 
     /**
@@ -553,24 +566,37 @@ class AccessibleTCPDF extends TCPDF
         }
         
         $activeBDC = $this->bdcManager->getActiveBDCFrame();
+        $currentFrameId = $this->currentFrameId;
         
-        if ($activeBDC !== null) {
-            // PATTERN: Close-Draw-Reopen
-            // We're inside a BDC block - temporarily close it
-                parent::_out('EMC');
-                
-            // Draw as Artifact
-                parent::_out('/Artifact BMC');
-                $drawCallback();
-                parent::_out('EMC');
+        // Determine context using DrawingContextManager
+        $context = $this->drawingContextManager->determineContext($activeBDC, $currentFrameId);
+        
+        if ($context->isContent()) {
+            // CONTENT: Text-decoration (underline, strike-through)
+            // Keep inside BDC as real content
+            $drawCallback();
             
-            // Reopen the BDC block with same tag and MCID
-            parent::_out('/' . $activeBDC['pdfTag'] . ' << /MCID ' . $activeBDC['mcid'] . ' >> BDC');
-        } else {
-            // Not inside BDC - simply wrap as Artifact
+        } elseif ($context->isDecorativeInsideTag()) {
+            // DECORATIVE_INSIDE_TAG: Borders, backgrounds in tagged content
+            // Use Close-Draw-Reopen pattern
+            if ($activeBDC !== null) {
+                parent::_out('EMC');
                 parent::_out('/Artifact BMC');
                 $drawCallback();
                 parent::_out('EMC');
+                parent::_out('/' . $activeBDC['pdfTag'] . ' << /MCID ' . $activeBDC['mcid'] . ' >> BDC');
+            } else {
+                // Fallback: Just artifact
+                parent::_out('/Artifact BMC');
+                $drawCallback();
+                parent::_out('EMC');
+            }
+            
+        } else {
+            // ARTIFACT: Outside any tagged content
+            parent::_out('/Artifact BMC');
+            $drawCallback();
+            parent::_out('EMC');
         }
     }
 
@@ -1254,7 +1280,8 @@ class AccessibleTCPDF extends TCPDF
                 $decision->element->id
             );
             
-            // Track in structure tree (legacy, will be moved to StructureTreeManager)
+            // Track in structure tree
+            // Note: Transparent inline tags are already filtered out in registration
             $this->structureTree[] = [
                 'type' => 'content',
                 'tag' => $decision->pdfTag,
@@ -1288,17 +1315,17 @@ class AccessibleTCPDF extends TCPDF
         return $result . $cellCode;
     }
 
-    // /**
-    //  * Override Line() to wrap border drawing as Artifact
-    //  * 
-    //  * Uses generic _wrapDrawingAsArtifact() helper.
-    //  * This fixes the Adobe bug where clicking on <P> selects table borders.
-    //  */
-    // public function Line($x1, $y1, $x2, $y2, $style=array()) {
-    //     $this->_wrapDrawingAsArtifact(function() use ($x1, $y1, $x2, $y2, $style) {
-    //         parent::Line($x1, $y1, $x2, $y2, $style);
-    //     });
-    // }
+    /**
+     * Override Line() to wrap border drawing as Artifact
+     * 
+     * Uses generic _wrapDrawingAsArtifact() helper.
+     * This fixes the Adobe bug where clicking on <P> selects table borders.
+     */
+    public function Line($x1, $y1, $x2, $y2, $style=array()) {
+        $this->_wrapDrawingAsArtifact(function() use ($x1, $y1, $x2, $y2, $style) {
+            parent::Line($x1, $y1, $x2, $y2, $style);
+        });
+    }
 
     // /**
     //  * Override Rect() to wrap rectangle drawing as Artifact

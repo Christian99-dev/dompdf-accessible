@@ -45,19 +45,52 @@ require_once __DIR__ . '/DrawingContext.php';
 class DrawingContextManager
 {
     /**
-     * Reference to semantic elements registry
+     * Reference to semantic elements registry (normal elements)
      * @var SemanticElement[]
      */
     private array $semanticElementsRef;
     
     /**
+     * Reference to transparent elements registry
+     * @var SemanticElement[]
+     */
+    private array $transparentElementsRef;
+    
+    /**
      * Constructor
      * 
-     * @param array $semanticElementsRef Reference to semantic elements array
+     * @param array $semanticElementsRef Reference to normal semantic elements array
+     * @param array $transparentElementsRef Reference to transparent elements array
      */
-    public function __construct(array &$semanticElementsRef)
+    public function __construct(array &$semanticElementsRef, array &$transparentElementsRef)
     {
         $this->semanticElementsRef = &$semanticElementsRef;
+        $this->transparentElementsRef = &$transparentElementsRef;
+    }
+    
+    /**
+     * Get semantic element by ID (checks both normal and transparent storage)
+     * 
+     * @param string|null $elementId Element ID to retrieve
+     * @return SemanticElement|null Element if found, null otherwise
+     */
+    private function getSemanticElement(?string $elementId): ?\Dompdf\SemanticElement
+    {
+        if ($elementId === null) {
+            return null;
+        }
+        
+        // Check normal elements first
+        if (isset($this->semanticElementsRef[$elementId])) {
+            return $this->semanticElementsRef[$elementId];
+        }
+        
+        // Check transparent elements
+        if (isset($this->transparentElementsRef[$elementId])) {
+            return $this->transparentElementsRef[$elementId];
+        }
+        
+        return null;
     }
     
     /**
@@ -96,7 +129,7 @@ class DrawingContextManager
         
         // Get BDC semantic element
         $bdcSemanticId = $activeBDCFrame['semanticId'];
-        $bdcSemantic = $this->semanticElementsRef[$bdcSemanticId] ?? null;
+        $bdcSemantic = $this->getSemanticElement($bdcSemanticId);
         
         if ($bdcSemantic === null) {
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
@@ -109,7 +142,7 @@ class DrawingContextManager
         // This catches transparent tags like <u>, <span style="text-decoration">
         $elementToCheck = null;
         if ($currentFrameId !== null) {
-            $elementToCheck = $this->semanticElementsRef[$currentFrameId] ?? null;
+            $elementToCheck = $this->getSemanticElement($currentFrameId);
         }
         
         // Walk up parent chain checking for text-decoration
@@ -137,7 +170,7 @@ class DrawingContextManager
             if ($parentId === null) {
                 break;
             }
-            $elementToCheck = $this->semanticElementsRef[$parentId] ?? null;
+            $elementToCheck = $this->getSemanticElement($parentId);
         }
         
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
