@@ -626,24 +626,6 @@ class AccessibleTCPDF extends TCPDF
     }
 
     /**
-     * Override endPage to wrap final page graphics operations as Artifact
-     * 
-     * CRITICAL FIX for content[65] validation error:
-     * TCPDF outputs graphics state reset operations at page end (after last content).
-     * These appear AFTER the final EMC but BEFORE endstream, causing "untagged content" errors.
-     * 
-     * SOLUTION: We can't wrap this because parent::endPage() closes the page buffer.
-     * Instead, we'll catch this in _endpage() override.
-     * 
-     * @param boolean $tocpage if true set the tocpage state to false
-     * @public
-     */
-    public function endPage($tocpage=false) {
-        // Just call parent - we handle artifacts in _endpage() override
-        parent::endPage($tocpage);
-    }
-    
-    /**
      * Override _endpage to wrap final graphics operations before page closes
      * 
      * This is called by endPage() BEFORE state changes to 1.
@@ -673,18 +655,6 @@ class AccessibleTCPDF extends TCPDF
                 $this->pages[$this->page] .= "EMC\n";
             }
         }
-    }
-
-    /**
-     * Override setGraphicVars to wrap graphics-state operations as Artifacts
-     * 
-     * CRITICAL FIX: Graphics operations (colors, line widths) must ALWAYS be
-     * marked as Artifacts, even when inside tagged content blocks.
-     * This prevents table borders from being associated with text MCIDs.
-     */
-    protected function setGraphicVars($gvars, $extended=false) {
-        // Just call parent - we wrap drawing operations themselves, not state changes
-        parent::setGraphicVars($gvars, $extended);
     }
 
     /**
