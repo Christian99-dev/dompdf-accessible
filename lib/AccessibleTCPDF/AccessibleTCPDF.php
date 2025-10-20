@@ -54,7 +54,6 @@ class AccessibleTCPDF extends TCPDF
     private DrawingManager $drawingManager;
     
 
-    
     // ========================================================================
     // LEGACY STATE (will be moved to managers)
     // ========================================================================
@@ -456,9 +455,9 @@ class AccessibleTCPDF extends TCPDF
         // mcidToObjId[0] = first StructElem, mcidToObjId[1] = second StructElem, etc.
         $out = '<< /Nums [';
         
-        // Index 0: Array of StructElems for page's MCIDs
+        // Index 1: Array of StructElems for page's MCIDs (Adobe ignores index 0)
         // Build array in MCID order (0, 1, 2, ...)
-        $out .= ' 0 [';
+        $out .= ' 1 [';
         if (!empty($mcidToObjId)) {
             // Sort by MCID (key) to ensure correct order
             ksort($mcidToObjId);
@@ -469,7 +468,7 @@ class AccessibleTCPDF extends TCPDF
         
         // Subsequent indices: One per annotation
         foreach ($linkStructElemObjIds as $idx => $linkObjId) {
-            $annotIndex = $idx + 1;  // Start from 1 (0 is used by page)
+            $annotIndex = $idx + 2;  // Start from 2 (1 is used by page)
             $out .= sprintf(' %d %d 0 R', $annotIndex, $linkObjId);
         }
         
@@ -499,7 +498,7 @@ class AccessibleTCPDF extends TCPDF
         $out .= ' /Type /StructTreeRoot';
         $out .= sprintf(' /K [%d 0 R]', $documentObjId);
         $out .= sprintf(' /ParentTree %d 0 R', $parentTreeObjId);
-        $out .= ' /ParentTreeNextKey 2';
+        $out .= ' /ParentTreeNextKey 3';  // 1=page, 2=first annotation, 3=next available
         
         // PDF/UA COMPLIANCE: RoleMap for non-standard structure types
         // Strong, Em → Span (inline emphasis)
@@ -802,7 +801,8 @@ class AccessibleTCPDF extends TCPDF
         // If PDF/UA mode, add /StructParents and /Tabs after annotations
         if ($this->pdfua && !empty($this->structureTree)) {
             // Page's /StructParents maps to ParentTree for resolving MCIDs
-            $annots .= ' /StructParents 0';
+            // CRITICAL: Adobe ignores /StructParents 0, so we use 1
+            $annots .= ' /StructParents 1';
             // FIX 3: /Tabs /S tells Adobe to follow structure for reading order
             $annots .= ' /Tabs /S';
         }
