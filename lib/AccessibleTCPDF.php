@@ -15,6 +15,7 @@ require_once __DIR__ . '/AccessibleTCPDF/BDCAction.php';
 require_once __DIR__ . '/AccessibleTCPDF/BDCStateManager.php';
 require_once __DIR__ . '/AccessibleTCPDF/TaggingManager.php';
 require_once __DIR__ . '/AccessibleTCPDF/ContentWrapperManager.php';
+require_once __DIR__ . '/AccessibleTCPDF/DrawingManager.php';
 
 /**
  * AccessibleTCPDF - PDF/UA compatible TCPDF extension
@@ -45,6 +46,8 @@ class AccessibleTCPDF extends TCPDF
      * @var ContentWrapperManager
      */
     private ContentWrapperManager $contentWrapper;
+    
+
     
     // ========================================================================
     // LEGACY STATE (will be moved to managers)
@@ -186,6 +189,8 @@ class AccessibleTCPDF extends TCPDF
         
         // Content Wrapper Manager - No dependencies
         $this->contentWrapper = new ContentWrapperManager();
+        
+        // Drawing Manager is static - no initialization needed
     }
 
     /**
@@ -517,53 +522,45 @@ class AccessibleTCPDF extends TCPDF
     }
 
     /**
-     * Wrap a drawing operation for PDF/UA compliance
+     * Execute a drawing operation with PDF/UA compliance
      * 
-     * ARCHITECTURE (v7 - Simplified Universal Pattern):
-     * =================================================
-     * ALL drawing operations (Line, Rect, etc.) use the SAME pattern:
-     * - If BDC active: Close-Draw-Reopen (maintains MCID continuity)
-     * - If no BDC: Simple Artifact wrap
+     * This method uses DrawingManager for decision logic and wraps drawing operations accordingly.
      * 
-     * WHY THIS WORKS:
-     * - PDF/UA forbids path operators (m, l, S, re, f) inside tagged content
-     * - Text-decoration underlines ARE path operators (TCPDF's _dounderlinew generates 're f')
-     * - Table borders are also path operators
-     * - NO DIFFERENCE between them on PDF operator level!
-     * 
-     * RESULT:
-     * - Text stays in BDC (TJ operators)
-     * - ALL graphics isolated as Artifacts (path operators)
-     * - Same MCID before/after ensures tag continuity
-     * - Tag-Strings contain ONLY text, no "Pfad" ✅
-     * 
-     * @param callable $drawCallback The drawing operation to execute
+     * @param string $operationName Name for logging (Line, Rect, etc.)
+     * @param callable $drawingCallback The actual drawing operation
      * @return void
      * @protected
      */
-    protected function _wrapDrawingAsArtifact(callable $drawCallback): void
+    private function _executeDrawingOperation(string $operationName, callable $drawingCallback): void
     {
-        // Only in PDF/UA mode and when on a page
+        // Non-PDF/UA mode or not on page → Draw directly
         if (!$this->pdfua || $this->page <= 0 || $this->state != 2) {
-            $drawCallback();
+            $drawingCallback();
             return;
         }
         
-        $activeBDC = $this->bdcManager->getActiveBDCFrame();
+        // Get decision from DrawingManager
+        $context = DrawingManager::analyzeDrawingContext(
+            $operationName, 
+            $this->currentFrameId, 
+            $this->bdcManager, 
+            $this->semanticElementsRef
+        );
         
-        if ($activeBDC !== null) {
-            // UNIVERSAL PATTERN: Close-Draw-Reopen
-            // Works for: table borders, text-decoration underlines, any graphics
-            parent::_out('EMC');
-            parent::_out('/Artifact BMC');
-            $drawCallback();
-            parent::_out('EMC');
-            parent::_out('/' . $activeBDC['pdfTag'] . ' << /MCID ' . $activeBDC['mcid'] . ' >> BDC');
+        // Close BDC if needed (for decorative elements that should end semantic tagging)
+        if ($context['should_close_bdc']) {
+            $this->_out($this->bdcManager->closeBDC());
+        }
+        
+        // Execute drawing operation
+        if ($context['wrap_as_artifact']) {
+            // Get Artifact wrapper operators from DrawingManager
+            $operators = DrawingManager::getArtifactWrapOperators($this->bdcManager);
+            $this->_out($operators['before']);
+            $drawingCallback();
+            $this->_out($operators['after']);
         } else {
-            // No active BDC: Simple Artifact wrap
-            parent::_out('/Artifact BMC');
-            $drawCallback();
-            parent::_out('EMC');
+            $drawingCallback();
         }
     }
 
@@ -1282,101 +1279,54 @@ class AccessibleTCPDF extends TCPDF
         return $result . $cellCode;
     }
 
+    // ========================================================================
+    // DRAWING OPERATIONS - Using DrawingManager for PDF/UA compliance
+    // This is the CORE architectural decision point for ALL PDF drawing operations.
+    // Every drawing method (Line, Rect, Circle, etc.) should use this pattern.
+    // ========================================================================
+
     /**
-     * Override Line() with smart context detection
-     * 
-     * CONTEXT-AWARE LOGIC:
-     * - Inside BDC (tagged content) → Text decoration, draw directly (no Artifact wrap)
-     * - Outside BDC → Table borders, etc., wrap as Artifact
-     * 
-     * This fixes the issue where text-decoration underlines were incorrectly
-     * wrapped as Artifacts instead of being part of the semantic text content.
+     * Override Line() using universal drawing pattern
      */
     public function Line($x1, $y1, $x2, $y2, $style=array()) {
-        // Check if we're inside tagged content
-        if ($this->bdcManager->isInsideTaggedContent()) {
-            // CASE 1: Inside BDC → Text decoration (underline, overline, line-through)
-            // Draw directly without Artifact wrapping - it's part of the text semantics
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                "Line inside BDC → Text decoration (no Artifact wrap)"
-            );
-            parent::Line($x1, $y1, $x2, $y2, $style);
-        } else {
-            // CASE 2: Outside BDC → Table borders, decorative lines
-            // Wrap as Artifact to prevent screenreader selection issues
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                "Line outside BDC → Decorative (Artifact wrap)"
-            );
-        $this->_wrapDrawingAsArtifact(function() use ($x1, $y1, $x2, $y2, $style) {
+        $this->_executeDrawingOperation("Line", function() use ($x1, $y1, $x2, $y2, $style) {
             parent::Line($x1, $y1, $x2, $y2, $style);
         });
     }
+
+    /**
+     * Override Rect() using universal drawing pattern
+     */
+    public function Rect($x, $y, $w, $h, $style='', $border_style=array(), $fill_color=array()) {
+        $this->_executeDrawingOperation("Rect", function() use ($x, $y, $w, $h, $style, $border_style, $fill_color) {
+            parent::Rect($x, $y, $w, $h, $style, $border_style, $fill_color);
+        });
     }
 
-    // /**
-    //  * Override Rect() to wrap rectangle drawing as Artifact
-    //  * 
-    //  * Uses generic _wrapDrawingAsArtifact() helper.
-    //  */
-    // public function Rect($x, $y, $w, $h, $style='', $border_style=array(), $fill_color=array()) {
-    //     $this->_wrapDrawingAsArtifact(function() use ($x, $y, $w, $h, $style, $border_style, $fill_color) {
-    //         parent::Rect($x, $y, $w, $h, $style, $border_style, $fill_color);
-    //     });
-    // }
+    /**
+     * Override Circle() using universal drawing pattern
+     */
+    public function Circle($x0, $y0, $r, $angstr=0, $angend=360, $style='', $line_style=array(), $fill_color=array(), $nc=2) {
+        $this->_executeDrawingOperation("Circle", function() use ($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc) {
+            parent::Circle($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc);
+        });
+    }
 
-    // /**
-    //  * Override Curve() to wrap curve drawing as Artifact
-    //  * 
-    //  * Uses generic _wrapDrawingAsArtifact() helper.
-    //  */
-    // public function Curve($x0, $y0, $x1, $y1, $x2, $y2, $x3, $y3, $style='', $line_style=array(), $fill_color=array()) {
-    //     $this->_wrapDrawingAsArtifact(function() use ($x0, $y0, $x1, $y1, $x2, $y2, $x3, $y3, $style, $line_style, $fill_color) {
-    //         parent::Curve($x0, $y0, $x1, $y1, $x2, $y2, $x3, $y3, $style, $line_style, $fill_color);
-    //     });
-    // }
+    /**
+     * Override Ellipse() using universal drawing pattern
+     */
+    public function Ellipse($x0, $y0, $rx, $ry=0, $angle=0, $astart=0, $afinish=360, $style='', $line_style=array(), $fill_color=array(), $nc=2) {
+        $this->_executeDrawingOperation("Ellipse", function() use ($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc) {
+            parent::Ellipse($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc);
+        });
+    }
 
-    // /**
-    //  * Override Ellipse() to wrap ellipse drawing as Artifact
-    //  * 
-    //  * Uses generic _wrapDrawingAsArtifact() helper.
-    //  */
-    // public function Ellipse($x0, $y0, $rx, $ry=0, $angle=0, $astart=0, $afinish=360, $style='', $line_style=array(), $fill_color=array(), $nc=2) {
-    //     $this->_wrapDrawingAsArtifact(function() use ($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc) {
-    //         parent::Ellipse($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc);
-    //     });
-    // }
-
-    // /**
-    //  * Override Circle() to wrap circle drawing as Artifact
-    //  * 
-    //  * Uses generic _wrapDrawingAsArtifact() helper.
-    //  */
-    // public function Circle($x0, $y0, $r, $angstr=0, $angend=360, $style='', $line_style=array(), $fill_color=array(), $nc=2) {
-    //     $this->_wrapDrawingAsArtifact(function() use ($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc) {
-    //         parent::Circle($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc);
-    //     });
-    // }
-
-    // /**
-    //  * Override Polygon() to wrap polygon drawing as Artifact
-    //  * 
-    //  * Uses generic _wrapDrawingAsArtifact() helper.
-    //  */
-    // public function Polygon($p, $style='', $line_style=array(), $fill_color=array(), $closed=true) {
-    //     $this->_wrapDrawingAsArtifact(function() use ($p, $style, $line_style, $fill_color, $closed) {
-    //         parent::Polygon($p, $style, $line_style, $fill_color, $closed);
-    //     });
-    // }
-
-    // /**
-    //  * Override Arrow() to wrap arrow drawing as Artifact
-    //  * 
-    //  * Uses generic _wrapDrawingAsArtifact() helper.
-    //  */
-    // public function Arrow($x0, $y0, $x1, $y1, $head_style=0, $arm_size=5, $arm_angle=15) {
-    //     $this->_wrapDrawingAsArtifact(function() use ($x0, $y0, $x1, $y1, $head_style, $arm_size, $arm_angle) {
-    //         parent::Arrow($x0, $y0, $x1, $y1, $head_style, $arm_size, $arm_angle);
-    //     });
-    // }
-
+    /**
+     * Override Polygon() using universal drawing pattern
+     */
+    public function Polygon($p, $style='', $line_style=array(), $fill_color=array(), $closed=true) {
+        $this->_executeDrawingOperation("Polygon", function() use ($p, $style, $line_style, $fill_color, $closed) {
+            parent::Polygon($p, $style, $line_style, $fill_color, $closed);
+        });
+    }
 }
