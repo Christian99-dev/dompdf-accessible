@@ -506,6 +506,51 @@ class AccessibleTCPDF extends TCPDF
         ];
     }
 
+    /**
+     * Wrap a drawing operation as Artifact with BDC lifecycle management
+     * 
+     * GENERIC HELPER for all drawing methods (Line, Rect, Circle, etc.)
+     * Implements the Close-Draw-Reopen BDC pattern:
+     * 1. If inside BDC: close it temporarily
+     * 2. Draw as Artifact
+     * 3. Reopen BDC with same tag and MCID
+     * 
+     * This fixes the Adobe bug where clicking on semantic tags selects graphics.
+     * 
+     * @param callable $drawCallback The drawing operation to execute
+     * @return void
+     * @protected
+     */
+    protected function _wrapDrawingAsArtifact(callable $drawCallback): void
+    {
+        // Only in PDF/UA mode and when on a page
+        if (!$this->pdfua || $this->page <= 0 || $this->state != 2) {
+            $drawCallback();
+            return;
+        }
+        
+        $activeBDC = $this->bdcManager->getActiveBDCFrame();
+        
+        if ($activeBDC !== null) {
+            // PATTERN: Close-Draw-Reopen
+            // We're inside a BDC block - temporarily close it
+            parent::_out('EMC');
+            
+            // Draw as Artifact
+            parent::_out('/Artifact BMC');
+            $drawCallback();
+            parent::_out('EMC');
+            
+            // Reopen the BDC block with same tag and MCID
+            parent::_out('/' . $activeBDC['pdfTag'] . ' << /MCID ' . $activeBDC['mcid'] . ' >> BDC');
+        } else {
+            // Not inside BDC - simply wrap as Artifact
+            parent::_out('/Artifact BMC');
+            $drawCallback();
+            parent::_out('EMC');
+        }
+    }
+
     // ========================================================================
     // TCPDF CORE OVERRIDES
     // All following methods override TCPDF to inject PDF/UA accessibility features.
@@ -621,16 +666,14 @@ class AccessibleTCPDF extends TCPDF
 
     /**
      * Override setGraphicVars to wrap graphics-state operations as Artifacts
+     * 
+     * CRITICAL FIX: Graphics operations (colors, line widths) must ALWAYS be
+     * marked as Artifacts, even when inside tagged content blocks.
+     * This prevents table borders from being associated with text MCIDs.
      */
     protected function setGraphicVars($gvars, $extended=false) {
-        // Only wrap as Artifact when OUTSIDE BDC blocks
-        if ($this->pdfua && $this->page > 0 && $this->state >= 1 && !$this->bdcManager->isInsideTaggedContent()) {
-            $this->_out('/Artifact BMC');
-            parent::setGraphicVars($gvars, $extended);
-            $this->_out('EMC');
-        } else {
-            parent::setGraphicVars($gvars, $extended);
-        }
+        // Just call parent - we wrap drawing operations themselves, not state changes
+        parent::setGraphicVars($gvars, $extended);
     }
 
     /**
@@ -1221,4 +1264,83 @@ class AccessibleTCPDF extends TCPDF
         
         return $result . $cellCode;
     }
+
+    /**
+     * Override Line() to wrap border drawing as Artifact
+     * 
+     * Uses generic _wrapDrawingAsArtifact() helper.
+     * This fixes the Adobe bug where clicking on <P> selects table borders.
+     */
+    public function Line($x1, $y1, $x2, $y2, $style=array()) {
+        $this->_wrapDrawingAsArtifact(function() use ($x1, $y1, $x2, $y2, $style) {
+            parent::Line($x1, $y1, $x2, $y2, $style);
+        });
+    }
+
+    // /**
+    //  * Override Rect() to wrap rectangle drawing as Artifact
+    //  * 
+    //  * Uses generic _wrapDrawingAsArtifact() helper.
+    //  */
+    // public function Rect($x, $y, $w, $h, $style='', $border_style=array(), $fill_color=array()) {
+    //     $this->_wrapDrawingAsArtifact(function() use ($x, $y, $w, $h, $style, $border_style, $fill_color) {
+    //         parent::Rect($x, $y, $w, $h, $style, $border_style, $fill_color);
+    //     });
+    // }
+
+    // /**
+    //  * Override Curve() to wrap curve drawing as Artifact
+    //  * 
+    //  * Uses generic _wrapDrawingAsArtifact() helper.
+    //  */
+    // public function Curve($x0, $y0, $x1, $y1, $x2, $y2, $x3, $y3, $style='', $line_style=array(), $fill_color=array()) {
+    //     $this->_wrapDrawingAsArtifact(function() use ($x0, $y0, $x1, $y1, $x2, $y2, $x3, $y3, $style, $line_style, $fill_color) {
+    //         parent::Curve($x0, $y0, $x1, $y1, $x2, $y2, $x3, $y3, $style, $line_style, $fill_color);
+    //     });
+    // }
+
+    // /**
+    //  * Override Ellipse() to wrap ellipse drawing as Artifact
+    //  * 
+    //  * Uses generic _wrapDrawingAsArtifact() helper.
+    //  */
+    // public function Ellipse($x0, $y0, $rx, $ry=0, $angle=0, $astart=0, $afinish=360, $style='', $line_style=array(), $fill_color=array(), $nc=2) {
+    //     $this->_wrapDrawingAsArtifact(function() use ($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc) {
+    //         parent::Ellipse($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc);
+    //     });
+    // }
+
+    // /**
+    //  * Override Circle() to wrap circle drawing as Artifact
+    //  * 
+    //  * Uses generic _wrapDrawingAsArtifact() helper.
+    //  */
+    // public function Circle($x0, $y0, $r, $angstr=0, $angend=360, $style='', $line_style=array(), $fill_color=array(), $nc=2) {
+    //     $this->_wrapDrawingAsArtifact(function() use ($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc) {
+    //         parent::Circle($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc);
+    //     });
+    // }
+
+    // /**
+    //  * Override Polygon() to wrap polygon drawing as Artifact
+    //  * 
+    //  * Uses generic _wrapDrawingAsArtifact() helper.
+    //  */
+    // public function Polygon($p, $style='', $line_style=array(), $fill_color=array(), $closed=true) {
+    //     $this->_wrapDrawingAsArtifact(function() use ($p, $style, $line_style, $fill_color, $closed) {
+    //         parent::Polygon($p, $style, $line_style, $fill_color, $closed);
+    //     });
+    // }
+
+    // /**
+    //  * Override Arrow() to wrap arrow drawing as Artifact
+    //  * 
+    //  * Uses generic _wrapDrawingAsArtifact() helper.
+    //  */
+    // public function Arrow($x0, $y0, $x1, $y1, $head_style=0, $arm_size=5, $arm_angle=15) {
+    //     $this->_wrapDrawingAsArtifact(function() use ($x0, $y0, $x1, $y1, $head_style, $arm_size, $arm_angle) {
+    //         parent::Arrow($x0, $y0, $x1, $y1, $head_style, $arm_size, $arm_angle);
+    //     });
+    // }
+
 }
