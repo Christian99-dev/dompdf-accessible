@@ -194,33 +194,6 @@ class AccessibleTCPDF extends TCPDF
     {
         $this->currentFrameId = $frameId;
     }
-    
-    /**
-     * Get current frame ID
-     * 
-     * @return string|null The current frame ID, or null if not set
-     */
-    private function getCurrentFrameId(): ?string
-    {
-        return $this->currentFrameId;
-    }
-    
-    /**
-     * Get current frame node on-demand
-     * 
-     * Fetches the SemanticNode from the tree using the stored frameId.
-     * This is called when we need the actual node (e.g., for drawing operations).
-     * 
-     * @return SemanticNode|null The current node, or null if no frameId set or node not found
-     */
-    private function getCurrentFrameNode(): ?SemanticNode
-    {
-        if ($this->currentFrameId === null || $this->semanticTree === null) {
-            return null;
-        }
-        
-        return $this->semanticTree->getNodeById($this->currentFrameId);
-    }
 
     // ========================================================================
     // UTILS
@@ -630,7 +603,7 @@ class AccessibleTCPDF extends TCPDF
         // Get decision from DrawingManager (no array parameter needed!)
         $context = $this->drawingManager->analyzeDrawingContext(
             $operationName, 
-            $this->getCurrentFrameId(),  // Pass frameId, not node!
+            $this->currentFrameId,  // Pass frameId, not node!
             $this->bdcManager->isInsideTaggedContent(),
             $this->bdcManager->getActiveBDCFrame()
         );
@@ -1275,7 +1248,7 @@ class AccessibleTCPDF extends TCPDF
         }
         
         // LOGGING: Track line-wrap issue
-        $currentFrameId = $this->getCurrentFrameId();
+        $currentFrameId = $this->currentFrameId;
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "frameId={$currentFrameId}, txt=" . substr($txt, 0, 50));
         
         // ====================================================================
