@@ -162,7 +162,7 @@ class TaggingManager
         
         // STEP 2: No semantic element - this is a text fragment or reflow frame
         // Use simple inheritance from immediate parent
-        $parentElement = $this->findImmediateParent($frameId);
+        $parentElement = $this->tree->findContentContainerParent($frameId);
         
         if ($parentElement !== null) {
             $pdfTag = $parentElement->getPdfStructureTag();
@@ -207,7 +207,7 @@ class TaggingManager
         
         // For #text nodes, resolve to parent element
         if ($semantic->tag === '#text') {
-            $parent = $this->findImmediateParent($semantic->id);
+            $parent = $this->tree->findContentContainerParent($semantic->id);
             
             if ($parent === null) {
                 SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
@@ -229,69 +229,5 @@ class TaggingManager
             sprintf("Resolved frame %s: <%s> → /%s", $semantic->id, $semantic->tag, $pdfTag)
         );
         return TaggingDecision::tagged($semantic, $pdfTag);
-    }
-    
-    /**
-     * Find immediate parent semantic node
-     * 
-     * ARCHITECTURE: Tree contains ONLY semantic containers (div, p, h1, td, etc.)
-     * Text frames created during rendering are NOT in tree → need numeric fallback
-     * 
-     * STRATEGY:
-     * 1. Fast path: Direct tree lookup O(1) - works for semantic containers
-     * 2. Slow path: Numeric fallback O(n) - for text/line-break frames
-     * 
-     * OPTIMIZATIONS:
-     * - Simplified regex (one pattern vs three)
-     * - Reduced search range (50 vs 100 frames)
-     * - Fewer format attempts (2 vs 3 per iteration)
-     * 
-     * @param string $frameId The frame ID to find parent for
-     * @return SemanticNode|null The immediate parent node
-     */
-    private function findImmediateParent(string $frameId): ?SemanticNode
-    {
-        // FAST PATH: Direct tree lookup (O(1))
-        $node = $this->tree->getNodeById($frameId);
-        
-        if ($node !== null) {
-            // Found in tree → walk up parent chain
-            $parent = $node->findParentWhere(fn($p) => $p->isContentContainer());
-            
-            if ($parent !== null) {
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("Tree: frame %s → parent <%s> (frame %s)", 
-                        $frameId, $parent->tag, $parent->id)
-                );
-            }
-            
-            return $parent;
-        }
-        
-        // SLOW PATH: Numeric fallback for text/line-break frames
-        // Extract numeric ID (simplified regex - matches end digits)
-        if (!preg_match('/(\d+)$/', $frameId, $matches)) {
-            return null;  // No numeric ID → can't search
-        }
-        
-        $currentId = (int)$matches[1];
-        
-        // Search backwards up to 50 frames (reduced from 100)
-        for ($i = $currentId - 1; $i > 0 && $i > $currentId - 50; $i--) {
-            // Try common formats (reduced from 3 to 2)
-            foreach ([(string)$i, "frame_{$i}"] as $candidateId) {
-                $candidate = $this->tree->getNodeById($candidateId);
-                
-                if ($candidate !== null && $candidate->isContentContainer()) {
-                    SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                        sprintf("Fallback: frame %s → parent <%s> (frame %s)", 
-                            $frameId, $candidate->tag, $candidate->id)
-                    );
-                    return $candidate;
-                }
-            }
-        }
-        
-        return null;  // No parent found
     }
 }
