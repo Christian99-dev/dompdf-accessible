@@ -294,29 +294,35 @@ class TaggingManager
     }
     
     /**
-     * Find immediate parent semantic node (O(log n) tree navigation!)
+     * Find immediate parent semantic node
      * 
-     * NEW TREE APPROACH: Walk up parent chain via direct references
-     * instead of backwards numeric search through array!
+     * ARCHITECTURE: Tree contains ONLY semantic containers (div, p, h1, td, etc.)
+     * Text frames created during rendering are NOT in tree → need numeric fallback
      * 
-     * FALLBACK: If node not in tree (e.g., #text nodes, line-break frames),
-     * search backwards numerically to find closest registered parent.
+     * STRATEGY:
+     * 1. Fast path: Direct tree lookup O(1) - works for semantic containers
+     * 2. Slow path: Numeric fallback O(n) - for text/line-break frames
+     * 
+     * OPTIMIZATIONS:
+     * - Simplified regex (one pattern vs three)
+     * - Reduced search range (50 vs 100 frames)
+     * - Fewer format attempts (2 vs 3 per iteration)
      * 
      * @param string $frameId The frame ID to find parent for
      * @return SemanticNode|null The immediate parent node
      */
     private function findImmediateParent(string $frameId): ?SemanticNode
     {
-        // Get node from tree (O(1))
+        // FAST PATH: Direct tree lookup (O(1))
         $node = $this->tree->getNodeById($frameId);
         
         if ($node !== null) {
-            // Node found in tree - walk up parent chain
+            // Found in tree → walk up parent chain
             $parent = $node->findParentWhere(fn($p) => $this->isContentContainer($p));
             
             if ($parent !== null) {
                 SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("Found immediate parent for frame %s: <%s> (frame %s)", 
+                    sprintf("Tree: frame %s → parent <%s> (frame %s)", 
                         $frameId, $parent->tag, $parent->id)
                 );
             }
@@ -324,38 +330,23 @@ class TaggingManager
             return $parent;
         }
         
-        // FALLBACK: Node not in tree (e.g., #text node, line-break frame)
-        // Search backwards numerically to find closest registered parent
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            "Frame {$frameId} not in tree, searching backwards numerically"
-        );
-        
-        // Extract numeric ID - support both "frame_XXX", "frameXXX", and plain "XXX" formats
-        $currentId = null;
-        if (preg_match('/^frame_?(\d+)$/i', $frameId, $matches)) {
-            $currentId = (int)$matches[1];
-        } elseif (ctype_digit($frameId)) {
-            $currentId = (int)$frameId;
+        // SLOW PATH: Numeric fallback for text/line-break frames
+        // Extract numeric ID (simplified regex - matches end digits)
+        if (!preg_match('/(\d+)$/', $frameId, $matches)) {
+            return null;  // No numeric ID → can't search
         }
         
-        if ($currentId === null) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                "Could not extract numeric ID from frame {$frameId}"
-            );
-            return null;
-        }
+        $currentId = (int)$matches[1];
         
-        // Search backwards up to 100 frames (safety limit)
-        for ($i = $currentId - 1; $i > 0 && $i > $currentId - 100; $i--) {
-            // Try both formats: plain number and with "frame_" prefix
-            $candidates = [(string)$i, "frame_{$i}", "frame{$i}"];
-            
-            foreach ($candidates as $candidateId) {
+        // Search backwards up to 50 frames (reduced from 100)
+        for ($i = $currentId - 1; $i > 0 && $i > $currentId - 50; $i--) {
+            // Try common formats (reduced from 3 to 2)
+            foreach ([(string)$i, "frame_{$i}"] as $candidateId) {
                 $candidate = $this->tree->getNodeById($candidateId);
                 
                 if ($candidate !== null && $this->isContentContainer($candidate)) {
                     SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                        sprintf("Found parent via numeric fallback: frame %s → <%s> (frame %s)", 
+                        sprintf("Fallback: frame %s → parent <%s> (frame %s)", 
                             $frameId, $candidate->tag, $candidate->id)
                     );
                     return $candidate;
@@ -363,11 +354,7 @@ class TaggingManager
             }
         }
         
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            "No parent found for frame {$frameId} (neither in tree nor via numeric search)"
-        );
-        
-        return null;
+        return null;  // No parent found
     }
     
     /**
