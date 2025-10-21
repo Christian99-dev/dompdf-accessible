@@ -63,31 +63,17 @@ class TaggingDecision
     }
     
     /**
-     * Create Line-Break decision (frame continues parent's BDC)
-     * 
-     * Used for: Line-break frames created during text reflow
-     * These frames have no semantic element but should continue parent's BDC.
-     * 
-     * @param SemanticNode $parentElement The parent element to continue
-     * @param string $pdfTag The PDF tag from parent
-     */
-    public static function lineBreak(SemanticNode $parentElement, string $pdfTag): self
-    {
-        return new self($parentElement, $pdfTag, false, false, true, 'Line-break frame');
-    }
-    
-    /**
      * Create Inherit decision (frame inherits from immediate parent)
      * 
-     * Used for: Text fragments and reflow frames that have no direct semantic element
-     * These frames inherit the semantic context from their immediate parent container.
+     * Used for text fragments, line-break frames, and reflow frames that have no direct semantic element.
      * 
      * @param SemanticNode $parentElement The parent element to inherit from
      * @param string $pdfTag The PDF tag from parent
+     * @param string $reason Optional reason for inheritance
      */
-    public static function inherit(SemanticNode $parentElement, string $pdfTag): self
+    public static function inherit(SemanticNode $parentElement, string $pdfTag, string $reason = 'Inherit from parent'): self
     {
-        return new self($parentElement, $pdfTag, false, false, true, 'Inherit from parent');
+        return new self($parentElement, $pdfTag, false, false, true, $reason);
     }
 }
 
@@ -195,60 +181,6 @@ class TaggingManager
     }
     
     /**
-     * Resolve the actual node to use for tagging
-     * 
-     * Handles special cases:
-     * - #text nodes → use parent
-     * - Regular elements → use as-is
-     * 
-     * Note: Transparent inline tags are handled in resolveTagging() 
-     * and never reach this method.
-     * 
-     * @param SemanticNode $semantic The semantic node
-     * @return SemanticNode|null The node to use for tagging
-     */
-    private function resolveTaggingElement(SemanticNode $semantic): ?SemanticNode
-    {
-        // CASE 1: #text node → use parent
-        if ($semantic->tag === '#text') {
-            $parent = $this->findImmediateParent($semantic->id);
-            
-            if ($parent === null) {
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    "No parent found for #text node {$semantic->id}"
-                );
-                return null;
-            }
-            
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("Using parent <%s> for #text node", $parent->tag)
-            );
-            
-            return $parent;
-        }
-        
-        // CASE 2: Regular element → use as-is
-        return $semantic;
-    }
-    
-    /**
-     * Check if a node should be wrapped as Artifact
-     * 
-     * Convenience method for quick artifact checks.
-     * 
-     * @param SemanticNode|null $semantic Semantic node (or null)
-     * @return bool True if should be wrapped as Artifact
-     */
-    public function shouldWrapAsArtifact(?SemanticNode $semantic): bool
-    {
-        if ($semantic === null) {
-            return true;
-        }
-        
-        return $semantic->isDecorative();
-    }
-    
-    /**
      * Process a semantic node that exists (simplified logic)
      * 
      * @param SemanticNode $semantic The semantic node to process
@@ -275,14 +207,20 @@ class TaggingManager
         
         // For #text nodes, resolve to parent element
         if ($semantic->tag === '#text') {
-            $tagElement = $this->resolveTaggingElement($semantic);
-            if ($tagElement === null) {
+            $parent = $this->findImmediateParent($semantic->id);
+            
+            if ($parent === null) {
                 SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("Could not resolve tagging element for %s → Artifact", $semantic->id)
+                    sprintf("Could not resolve #text parent for %s → Artifact", $semantic->id)
                 );
                 return TaggingDecision::artifact('Could not resolve #text parent');
             }
-            $semantic = $tagElement;
+            
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                sprintf("Using parent <%s> for #text node", $parent->tag)
+            );
+            
+            $semantic = $parent;
         }
         
         // Regular semantic element
@@ -318,7 +256,7 @@ class TaggingManager
         
         if ($node !== null) {
             // Found in tree → walk up parent chain
-            $parent = $node->findParentWhere(fn($p) => $this->isContentContainer($p));
+            $parent = $node->findParentWhere(fn($p) => $p->isContentContainer());
             
             if ($parent !== null) {
                 SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
@@ -344,7 +282,7 @@ class TaggingManager
             foreach ([(string)$i, "frame_{$i}"] as $candidateId) {
                 $candidate = $this->tree->getNodeById($candidateId);
                 
-                if ($candidate !== null && $this->isContentContainer($candidate)) {
+                if ($candidate !== null && $candidate->isContentContainer()) {
                     SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                         sprintf("Fallback: frame %s → parent <%s> (frame %s)", 
                             $frameId, $candidate->tag, $candidate->id)
@@ -355,17 +293,5 @@ class TaggingManager
         }
         
         return null;  // No parent found
-    }
-    
-    /**
-     * Check if node is a content container (likely to contain text)
-     * 
-     * @param SemanticNode $element The node to check
-     * @return bool True if this is a content container
-     */
-    private function isContentContainer(SemanticNode $element): bool
-    {
-        $contentTags = ['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'td', 'th', 'li', 'span'];
-        return in_array($element->tag, $contentTags) && !$element->isDecorative();
     }
 }

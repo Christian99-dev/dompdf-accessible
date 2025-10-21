@@ -401,6 +401,20 @@ class SemanticNode
     }
     
     /**
+     * Check if element is a content container
+     * 
+     * Content containers are elements that typically contain text/inline content
+     * and are used to locate parent elements for #text nodes.
+     * 
+     * @return bool
+     */
+    public function isContentContainer(): bool
+    {
+        $contentTags = ['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'td', 'th', 'li', 'span'];
+        return in_array($this->tag, $contentTags) && !$this->isDecorative();
+    }
+    
+    /**
      * Check if element is table-related
      * 
      * Table-related elements include table structure tags (table, tr, td, th)
