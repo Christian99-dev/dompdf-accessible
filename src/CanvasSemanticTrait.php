@@ -28,145 +28,124 @@ namespace Dompdf;
  */
 trait CanvasSemanticTrait
 {
-    // ========================================================================
-    // OLD STRUCTURE (KEPT for backward compatibility!)
-    // ========================================================================
-    
-    /**
-     * Storage for semantic information
-     * Maps element IDs to their SemanticElement objects
-     * ONLY contains elements that should get StructElems in PDF!
-     * 
-     * @var SemanticElement[]
-     */
-    protected array $_semantic_elements = [];
-    
-    // ========================================================================
-    // NEW STRUCTURE (Tree for O(1) navigation!)
-    // ========================================================================
-    
+   
     /**
      * Semantic tree structure for O(1) parent/child navigation
      * @var SemanticTree|null
      */
     protected ?SemanticTree $_semantic_tree = null;
-    
-    /**
-     * Register a semantic element
-     * 
-     * OPTIMIZATION: Skip registration of transparent inline tags
-     * These tags (strong, em, span, etc.) provide only styling, not structure.
-     * They should NOT create separate StructElems in the PDF structure tree.
-     * Instead, their styling is applied via font changes in the parent's BDC context.
-     * 
-     * @param string $elementId Unique identifier for the element (e.g., "frame_123")
-     * @param SemanticElement|array $semanticData Either a SemanticElement object or legacy array format
-     */
-    public function registerSemanticElement(SemanticElement $semanticElement): void
-    {        
-        $this->_semantic_elements[$semanticElement->id] = $semanticElement;
         
-        // Get text content for debugging
-        $textContent = 'N/A';
-        if (isset($semanticElement->attributes['text_content'])) {
-            $textContent = substr($semanticElement->attributes['text_content'], 0, 100);
-        }
-        
-        SimpleLogger::log(
-            "canvas_semantic_trait_logs",
-            "registerSemanticElement()",
-            sprintf(
-                "REGISTER: frame_%s | <%s> [%s] | parent: %s | text: '%s'",
-                $semanticElement->id,
-                $semanticElement->tag,
-                $semanticElement->display,
-                $semanticElement->parentId ?? 'none',
-                $textContent
-            )
-        );  
-    }
-    
-    // ========================================================================
-    // NEW TREE METHODS (parallel to old structure!)
-    // ========================================================================
-    
     /**
-     * Get the semantic tree for direct access
-     * 
-     * Usage: $canvas->getSemanticTree()->add($id, $tag, $attrs, $display, $parentId)
-     * 
-     * @return SemanticTree|null The tree or null if not initialized
-     */
-    public function getSemanticTree(): ?SemanticTree
-    {
-        return $this->_semantic_tree;
-    }    
-
-    /**
-     * Set current frame ID - TUNNEL to backend
-     * This method forwards the frame ID directly to AccessibleTCPDF
-     * 
-     * @param string|null $frameId The frame ID being rendered
-     */
-    public function setCurrentFrameId(?string $frameId): void
-    {
-        // Direct tunnel to backends, which implement this method, e.g. AccessibleTCPDF
-        if (method_exists($this->_pdf, 'setCurrentFrameId')) {
-            $this->_pdf->setCurrentFrameId($frameId);
-        }
-    }
-    
-    // ========================================================================
-    // NEW TREE CURRENT NODE TRACKING (parallel to setCurrentFrameId!)
-    // ========================================================================
-    
-    /**
-     * Set current frame node in tree (O(1) lookup!)
-     * 
+     * Set current frame ID in tree (just passes frameId to PDF backend)
+     *
      * This is called during rendering to track which node is being processed.
-     * Uses the tree's HashMap for O(1) lookup instead of searching!
+     * The tree itself doesn't store "current" - that's TCPDF's responsibility.
      * 
      * @param string|null $frameId The frame ID being rendered (null = clear)
      */
-    public function setCurrentFrameNode(?string $frameId): void
+    public function setCurrentFrameId(?string $frameId): void
     {
         // Tree not initialized? Skip silently
         if ($this->_semantic_tree === null) {
             return;
         }
         
-        // Clear current node
-        if ($frameId === null) {
-            $this->_semantic_tree->clearCurrentNode();
+        // Just tunnel to PDF backend - tree doesn't need to know "current"!
+        if (method_exists($this->_pdf, 'setCurrentFrameId')) {
+            $this->_pdf->setCurrentFrameId($frameId);
+        }
+    }
+
+    /**
+     * Register semantic elements for accessibility (SIMPLIFIED APPROACH)
+     * 
+     * DUAL REGISTRATION:
+```    /**
+     * Register semantic elements for accessibility (SIMPLIFIED APPROACH)
+     * 
+     * DUAL REGISTRATION:
+     * - OLD: Registers to $_semantic_elements array (KEPT for compatibility!)
+     * - NEW: Registers to $_semantic_tree (parallel tree structure!)
+     * 
+     * Only registers semantic containers, not text fragments.
+     * Text fragments will automatically inherit from their immediate parent container.
+     * This eliminates the need for complex backward searching and line-break detection.
+     * 
+     * @param Frame $frame The root frame to start from
+     */
+    public function registerAllSemanticElements(Frame $frame): void
+    {
+
+        if($this->_semantic_tree === null) return;
+        
+        $registeredCount = 0;
+        
+        SimpleLogger::log(
+            "dompdf_logs",
+            __METHOD__,
+            "=== Starting registration ==="
+        );
+    
+        // Simplified recursive function - only register semantic containers
+        $registerSemanticContainers = function(Frame $frame) use (&$registerSemanticContainers, &$registeredCount) {
+            $node = $frame->get_node();
+            $nodeName = $node->nodeName;
             
-            SimpleLogger::log("canvas_semantic_trait_logs", __METHOD__,
-                "TREE: Cleared current node"
-            );
-            return;
-        }
-        
-        // Set current node via O(1) HashMap lookup!
-        $success = $this->_semantic_tree->setCurrentNodeById($frameId);
-        
-        if ($success) {
-            $current = $this->_semantic_tree->getCurrentNode();
+            // SIMPLIFIED LOGIC: Only register semantic containers, skip text fragments and decorative elements
+            // Skip text fragments and purely decorative elements (#text, br, hr)
+            // Register all other elements as potential semantic containers (div, p, span, h1-h6, table, tr, td, th, ul, ol, li, etc.)
+            if (!in_array($nodeName, ['#text', 'br', 'hr'])) {
+                $attributes = [];
+                if ($node->hasAttributes()) {
+                    foreach ($node->attributes as $attr) {
+                        $attributes[$attr->name] = $attr->value;
+                    }
+                }
+                
+                $parent = $frame->get_parent();
+                $parentId = $parent ? $parent->get_id() : null;
+                
+                // Extract common data
+                $frameId = $frame->get_id();
+                $display = $frame->get_style()->display;
+                
+                // Direct tree access - no wrapper method!
+                $this->_semantic_tree->add(
+                    $frameId,       // Frame ID
+                    $nodeName,      // Tag name
+                    $attributes,    // Attributes
+                    $display,       // CSS display
+                    $parentId       // Parent frame ID (tree handles linking!)
+                );
+                
+                $registeredCount++;
+                
+                SimpleLogger::log("dompdf_logs", __METHOD__, 
+                    sprintf("DUAL: Registered to BOTH structures: %s <%s> (parent: %s)", 
+                        $frameId, $nodeName, $parentId ?? 'none')
+                );
+            }
             
-            SimpleLogger::log("canvas_semantic_trait_logs", __METHOD__,
-                sprintf("TREE: Set current node to node_%s <%s> depth=%d",
-                    $current->id,
-                    $current->tag,
-                    $current->getDepth()
-                )
-            );
-        } else {
-            SimpleLogger::log("canvas_semantic_trait_logs", __METHOD__,
-                sprintf("TREE: WARNING - Node %s not found in tree", $frameId)
-            );
-        }
+            // Process all children regardless of whether we registered this frame
+            foreach ($frame->get_children() as $child) {
+                $registerSemanticContainers($child);
+            }
+        };
         
-        // Tunnel to PDF backend (if it supports tree nodes)
-        if (method_exists($this->_pdf, 'setCurrentFrameNode')) {
-            $this->_pdf->setCurrentFrameNode($frameId);
-        }
+        // Start registration
+        $registerSemanticContainers($frame);
+        
+        SimpleLogger::log(
+            "dompdf_logs",
+            __METHOD__,
+            sprintf(
+                "=== Semantic registration complete: %d elements | Array: %d | Tree nodes: %d ===\n Tree: %s",
+                $registeredCount,
+                $registeredCount,  // Should match
+                $this->_semantic_tree ? $this->_semantic_tree->getNodeCount() : 0, // Should also match,
+                $this->_semantic_tree ? $this->_semantic_tree : 0
+            )
+        );
+        
     }
 }

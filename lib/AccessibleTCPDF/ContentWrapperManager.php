@@ -121,10 +121,10 @@ class ContentWrapperManager
         if (isset(self::PDFUA_FONT_MAP[$familyLower])) {
             $mapped = self::PDFUA_FONT_MAP[$familyLower];
             
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("PDF/UA: Redirected font '%s' → '%s' for embedding", 
-                    $family, $mapped)
-            );
+            // SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+            //     sprintf("PDF/UA: Redirected font '%s' → '%s' for embedding", 
+            //         $family, $mapped)
+            // );
             
             return $mapped;
         }

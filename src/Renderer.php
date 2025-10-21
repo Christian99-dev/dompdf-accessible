@@ -58,12 +58,8 @@ class Renderer extends AbstractRenderer
         global $_dompdf_debug;
 
         $this->_check_callbacks("begin_frame", $frame);
-
-        // ===== OLD: Set current frame ID (KEEP for compatibility!) =====
-        $this->_canvas->setCurrentFrameId((string) $frame->get_id());
         
-        // ===== NEW: Set current tree node (parallel!) =====
-        $this->_canvas->setCurrentFrameNode((string) $frame->get_id());
+        $this->_canvas->setCurrentFrameId((string) $frame->get_id());
 
         if ($_dompdf_debug) {
             echo $frame;
@@ -222,12 +218,8 @@ class Renderer extends AbstractRenderer
         if ($hasTransform) {
             $this->_canvas->restore();
         }
-
-        // ===== OLD: Clear frame ID (KEEP for compatibility!) =====
-        $this->_canvas->setCurrentFrameId(null);
         
-        // ===== NEW: Clear tree node (parallel!) =====
-        $this->_canvas->setCurrentFrameNode(null);
+        $this->_canvas->setCurrentFrameId(null);
 
         // Check for end frame callback
         $this->_check_callbacks("end_frame", $frame);

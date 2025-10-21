@@ -520,11 +520,8 @@ class SemanticTree
      */
     private array $nodeMap = [];
     
-    /**
-     * Currently active node during rendering
-     * @var SemanticNode|null
-     */
-    private ?SemanticNode $currentNode = null;
+    // NOTE: currentNode removed! TCPDF manages its own currentFrameId.
+    // Tree is just a data structure, not a state machine.
     
     /**
      * Total number of nodes added
@@ -636,58 +633,6 @@ class SemanticTree
     public function getAllNodes(): array
     {
         return $this->nodeMap;
-    }
-    
-    // ========================================================================
-    // CURRENT NODE TRACKING
-    // ========================================================================
-    
-    /**
-     * Set current node by frame ID (O(1) lookup!)
-     * 
-     * This is called during rendering to track which node is being processed.
-     * 
-     * @param string $frameId Frame ID of node to set as current
-     * @return bool True if node was found and set, false otherwise
-     */
-    public function setCurrentNodeById(string $frameId): bool
-    {
-        $node = $this->getNodeById($frameId);
-        
-        if ($node === null) {
-            SimpleLogger::log("semantic_tree_logs", __METHOD__,
-                sprintf("WARNING: Node %s not found in tree", $frameId)
-            );
-            return false;
-        }
-        
-        $this->currentNode = $node;
-        
-        SimpleLogger::log("semantic_tree_logs", __METHOD__,
-            sprintf("Set current node: %s <%s> depth=%d",
-                $node->id, $node->tag, $node->getDepth()
-            )
-        );
-        
-        return true;
-    }
-    
-    /**
-     * Get current node
-     * 
-     * @return SemanticNode|null Current node or null if not set
-     */
-    public function getCurrentNode(): ?SemanticNode
-    {
-        return $this->currentNode;
-    }
-    
-    /**
-     * Clear current node
-     */
-    public function clearCurrentNode(): void
-    {
-        $this->currentNode = null;
     }
     
     // ========================================================================

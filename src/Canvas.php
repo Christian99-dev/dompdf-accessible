@@ -486,30 +486,6 @@ interface Canvas
     function output($options = []);
 
     /**
-     * Register semantic information for an element
-     * 
-     * This method stores semantic data that can later be accessed during
-     * rendering or post-processing (e.g., for PDF/UA tagging).
-     * 
-     * ! no implementation needed -- only use the trait in the canvas implementation
-     * 
-     * @param SemanticElement $semanticElement The semantic element to register
-     */
-    public function registerSemanticElement(SemanticElement $semanticElement);
-
-    /**
-     * Set the current frame ID being rendered
-     * 
-     * This is a tunnel method that forwards the frame ID to the backend.
-     * The backend (e.g., AccessibleTCPDF) is responsible for managing the current frame ID.
-     * 
-     * ! no implementation needed -- only use the trait in the canvas implementation
-     * 
-     * @param string|null $frameId The frame ID (e.g., "3", "4", "5") or null to clear
-     */
-    public function setCurrentFrameId(?string $frameId): void;
-
-    /**
      * Set the current frame node in the semantic tree (NEW - parallel to setCurrentFrameId!)
      * 
      * This is a tunnel method that sets the current node in the semantic tree structure.
@@ -519,18 +495,20 @@ interface Canvas
      * 
      * @param string|null $frameId The frame ID (e.g., "3", "4", "5") or null to clear
      */
-    public function setCurrentFrameNode(?string $frameId): void;
+    public function setCurrentFrameId(?string $frameId): void;
 
     /**
-     * Get the semantic tree for direct access (NEW!)
+     * Register semantic elements for accessibility (SIMPLIFIED APPROACH)
      * 
-     * This allows direct tree manipulation via $canvas->getSemanticTree()->add(...)
-     * instead of going through wrapper methods.
+     * DUAL REGISTRATION:
+     * - OLD: Registers to $_semantic_elements array (KEPT for compatibility!)
+     * - NEW: Registers to $_semantic_tree (parallel tree structure!)
      * 
-     * ! no implementation needed -- only use the trait in the canvas implementation
+     * Only registers semantic containers, not text fragments.
+     * Text fragments will automatically inherit from their immediate parent container.
+     * This eliminates the need for complex backward searching and line-break detection.
      * 
-     * @return SemanticTree|null The tree or null if not initialized
+     * @param Frame $frame The root frame to start from
      */
-    public function getSemanticTree(): ?SemanticTree;
-
+    public function registerAllSemanticElements(Frame $frame): void;
 }
