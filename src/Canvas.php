@@ -509,4 +509,38 @@ interface Canvas
      */
     public function setCurrentFrameId(?string $frameId): void;
 
+    /**
+     * Set the current frame node in the semantic tree (NEW - parallel to setCurrentFrameId!)
+     * 
+     * This is a tunnel method that sets the current node in the semantic tree structure.
+     * Uses O(1) HashMap lookup instead of searching through arrays.
+     * 
+     * ! no implementation needed -- only use the trait in the canvas implementation
+     * 
+     * @param string|null $frameId The frame ID (e.g., "3", "4", "5") or null to clear
+     */
+    public function setCurrentFrameNode(?string $frameId): void;
+
+    /**
+     * Get the semantic tree for direct access (NEW!)
+     * 
+     * This allows direct tree manipulation via $canvas->getSemanticTree()->add(...)
+     * instead of going through wrapper methods.
+     * 
+     * ! no implementation needed -- only use the trait in the canvas implementation
+     * 
+     * @return SemanticTree|null The tree or null if not initialized
+     */
+    public function getSemanticTree(): ?SemanticTree;
+
+    /**
+     * Initialize the semantic tree (NEW!)
+     * 
+     * This method creates the SemanticTree instance and prepares it for use.
+     * Should be called once before rendering starts.
+     * 
+     * ! no implementation needed -- only use the trait in the canvas implementation
+     */
+    public function initializeSemanticTree(): void;
+
 }

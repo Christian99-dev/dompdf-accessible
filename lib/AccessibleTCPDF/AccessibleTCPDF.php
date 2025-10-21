@@ -7,6 +7,7 @@
 
 use Dompdf\SimpleLogger;
 use Dompdf\SemanticElement;
+use Dompdf\SemanticTree;
 
 require_once __DIR__ . '/tcpdf/tcpdf.php';
 
@@ -16,6 +17,7 @@ require_once __DIR__ . '/BDCStateManager.php';
 require_once __DIR__ . '/TaggingManager.php';
 require_once __DIR__ . '/ContentWrapperManager.php';
 require_once __DIR__ . '/DrawingManager.php';
+require_once __DIR__ . '../../../src/SemanticTree.php';
 
 /**
  * AccessibleTCPDF - PDF/UA compatible TCPDF extension
@@ -138,6 +140,7 @@ class AccessibleTCPDF extends TCPDF
         $pdfa = false, 
         $pdfua = false,
         ?array &$semanticElementsRef = null,
+        ?SemanticTree $semanticTree = null,
     ) 
     {        
         parent::__construct($orientation, $unit, $format, $unicode, $encoding, $diskcache, $pdfa);

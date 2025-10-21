@@ -176,7 +176,8 @@ class TCPDF implements Canvas
             false,
             $this->_dompdf->getOptions()->isPDFAEnabled(),     
             $this->_dompdf->getOptions()->isPDFUAEnabled(),
-            $this->_semantic_elements
+            $this->_semantic_elements,
+            $this->_semantic_tree
         ); 
 
         // Set document information

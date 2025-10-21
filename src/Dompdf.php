@@ -867,6 +867,10 @@ class Dompdf
        /**
      * Register semantic elements for accessibility (SIMPLIFIED APPROACH)
      * 
+     * DUAL REGISTRATION:
+     * - OLD: Registers to $_semantic_elements array (KEPT for compatibility!)
+     * - NEW: Registers to $_semantic_tree (parallel tree structure!)
+     * 
      * Only registers semantic containers, not text fragments.
      * Text fragments will automatically inherit from their immediate parent container.
      * This eliminates the need for complex backward searching and line-break detection.
@@ -880,8 +884,11 @@ class Dompdf
         SimpleLogger::log(
             "dompdf_logs",
             __METHOD__,
-            "=== Starting SIMPLIFIED semantic element registration ==="
+            "=== Starting DUAL semantic registration (Array + Tree) ==="
         );
+        
+        // NEW: Initialize tree BEFORE registration
+        $this->canvas->initializeSemanticTree();
         
         // Simplified recursive function - only register semantic containers
         $registerSemanticContainers = function(Frame $frame) use (&$registerSemanticContainers, &$registeredCount) {
@@ -889,7 +896,9 @@ class Dompdf
             $nodeName = $node->nodeName;
             
             // SIMPLIFIED LOGIC: Only register semantic containers, skip text fragments and decorative elements
-            if ($this->isSemanticContainer($nodeName)) {
+            // Skip text fragments and purely decorative elements (#text, br, hr)
+            // Register all other elements as potential semantic containers (div, p, span, h1-h6, table, tr, td, th, ul, ol, li, etc.)
+            if (!in_array($nodeName, ['#text', 'br', 'hr'])) {
                 $attributes = [];
                 if ($node->hasAttributes()) {
                     foreach ($node->attributes as $attr) {
@@ -900,20 +909,36 @@ class Dompdf
                 $parent = $frame->get_parent();
                 $parentId = $parent ? $parent->get_id() : null;
                 
+                // Extract common data
+                $frameId = $frame->get_id();
+                $display = $frame->get_style()->display;
+                
+                // ===== OLD REGISTRATION (KEEP for compatibility!) =====
                 $semanticElement = new SemanticElement(
-                    $frame->get_id(),           // Frame ID
-                    $nodeName,                  // Tag name
-                    $attributes,                // Attributes
-                    $frame->get_style()->display, // CSS display
-                    $parentId                   // Parent frame ID
+                    $frameId,       // Frame ID
+                    $nodeName,      // Tag name
+                    $attributes,    // Attributes
+                    $display,       // CSS display
+                    $parentId       // Parent frame ID
                 );
                 
                 $this->canvas->registerSemanticElement($semanticElement);
+                
+                // ===== NEW REGISTRATION (parallel tree!) =====
+                // Direct tree access - no wrapper method!
+                $this->canvas->getSemanticTree()->add(
+                    $frameId,       // Frame ID
+                    $nodeName,      // Tag name
+                    $attributes,    // Attributes
+                    $display,       // CSS display
+                    $parentId       // Parent frame ID (tree handles linking!)
+                );
+                
                 $registeredCount++;
                 
                 SimpleLogger::log("dompdf_logs", __METHOD__, 
-                    sprintf("Registered semantic container: %s <%s> (parent: %s)", 
-                        $frame->get_id(), $nodeName, $parentId ?? 'none')
+                    sprintf("DUAL: Registered to BOTH structures: %s <%s> (parent: %s)", 
+                        $frameId, $nodeName, $parentId ?? 'none')
                 );
             }
             
@@ -926,32 +951,21 @@ class Dompdf
         // Start registration
         $registerSemanticContainers($frame);
         
+        // NEW: Log tree statistics
+        $tree = $this->canvas->getSemanticTree();
+        
         SimpleLogger::log(
-            "dompdf_semantic",
+            "dompdf_logs",
             __METHOD__,
             sprintf(
-                "=== Semantic registration complete: %d elements registered ===",
-                $registeredCount
+                "=== Semantic registration complete: %d elements | Array: %d | Tree nodes: %d ===\n Tree: %s",
+                $registeredCount,
+                $registeredCount,  // Should match
+                $tree ? $tree->getNodeCount() : 0, // Should also match,
+                $tree ? $tree : 0
             )
         );
-    }
-    
-    /**
-     * Check if a node represents a semantic container that should be registered
-     * 
-     * @param string $nodeName The DOM node name
-     * @return bool True if this is a semantic container
-     */
-    private function isSemanticContainer(string $nodeName): bool
-    {
-        // Skip text fragments and purely decorative elements
-        if (in_array($nodeName, ['#text', 'br', 'hr'])) {
-            return false;
-        }
         
-        // Register all other elements as potential semantic containers
-        // This includes: div, p, span, h1-h6, table, tr, td, th, ul, ol, li, etc.
-        return true;
     }
 
     /**
