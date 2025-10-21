@@ -38,12 +38,6 @@ class AccessibleTCPDF extends TCPDF
     private BDCStateManager $bdcManager;
     
     /**
-     * Tagging Manager - Resolves semantic elements to PDF tags
-     * @var TaggingManager
-     */
-    private TaggingManager $taggingManager;
-    
-    /**
      * Content Wrapper Manager - Font injection & Artifact wrapping
      * @var ContentWrapperManager
      */
@@ -180,9 +174,6 @@ class AccessibleTCPDF extends TCPDF
         
         // BDC State Manager - No dependencies
         $this->bdcManager = new BDCStateManager();
-        
-        // Tagging Manager - Needs semantic tree
-        $this->taggingManager = new TaggingManager($this->semanticTree);
         
         // Content Wrapper Manager - No dependencies
         $this->contentWrapper = new ContentWrapperManager();
@@ -1290,7 +1281,7 @@ class AccessibleTCPDF extends TCPDF
         // ====================================================================
         // PHASE 1: TAGGING RESOLUTION - Determine WHAT to tag (SIMPLIFIED)
         // ====================================================================
-        $decision = $this->taggingManager->resolveTagging($currentFrameId);
+        $decision = TaggingManager::resolveTagging($this->semanticTree, $currentFrameId);
         
         // ====================================================================
         // PHASE 2: BDC LIFECYCLE - Determine WHEN to open/close BDC

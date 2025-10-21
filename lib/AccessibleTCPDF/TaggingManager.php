@@ -6,7 +6,6 @@
  */
 
 use Dompdf\SimpleLogger;
-use Dompdf\SemanticElement;
 use Dompdf\SemanticTree;
 use Dompdf\SemanticNode;
 
@@ -80,20 +79,14 @@ class TaggingDecision
 /**
  * Tagging Manager - Resolves semantic elements to PDF tagging decisions
  * 
- * This class encapsulates ALL semantic resolution logic:
- * - Semantic element lookup from tree
- * - Decorative element detection (aria-hidden, role=presentation)
- * - Transparent inline tag handling (strong, em, span)
- * - Parent element resolution for #text nodes
- * - PDF structure tag mapping (HTML → PDF/UA)
+ * This class provides a single static method to resolve frame IDs to tagging decisions.
+ * No state, no constructor, just pure logic.
  * 
- * **Single Responsibility:** Semantic → PDF Tag Resolution
+ * **Single Responsibility:** Frame ID + Tree → Tagging Decision
  * 
  * Usage:
  * ```php
- * $manager = new TaggingManager($semanticTree);
- * 
- * $decision = $manager->resolveTagging($frameId);
+ * $decision = TaggingManager::resolveTagging($tree, $frameId);
  * 
  * if ($decision->isArtifact) {
  *     // Wrap as /Artifact BMC ... EMC
@@ -107,73 +100,35 @@ class TaggingDecision
 class TaggingManager
 {
     /**
-     * Semantic tree for O(1) node access
-     * @var SemanticTree
-     */
-    private SemanticTree $tree;
-    
-    /**
-     * Constructor
-     * 
-     * @param SemanticTree $tree Semantic tree with all nodes
-     */
-    public function __construct(SemanticTree $tree)
-    {
-        $this->tree = $tree;
-    }
-    
-    /**
      * Resolve tagging decision for current frame
      * 
-     * This is the MAIN method that implements the complete tagging logic:
-     * 1. No semantic element → Check if line-break frame OR Artifact
-     * 2. Decorative element → Artifact (aria-hidden, role=presentation)
-     * 3. Transparent inline tag → Transparent (styling only, no BDC)
-     * 4. #text node → Use parent element for tagging
-     * 5. Regular element → Tag with PDF structure tag
+     * This method implements the complete tagging logic with early returns:
+     * 1. No frame ID → Artifact
+     * 2. No semantic element → Try parent (text fragment/reflow)
+     * 3. Decorative element → Artifact
+     * 4. Transparent inline tag → Transparent
+     * 5. #text node → Use parent element
+     * 6. Regular element → Tag with PDF structure tag
      * 
+     * @param SemanticTree $tree The semantic tree
      * @param string|null $frameId Current frame ID being rendered
      * @return TaggingDecision Decision with element, PDF tag, and mode flags
      */
-    public function resolveTagging(?string $frameId): TaggingDecision
+    public static function resolveTagging(SemanticTree $tree, ?string $frameId): TaggingDecision
     {
-        // STEP 1: Try to get direct semantic element from tree
-        $semantic = $frameId !== null ? $this->tree->getNodeById($frameId) : null;
-        
-        if ($semantic !== null) {
-            // We have a direct semantic element - process it normally
-            return $this->processSemanticElement($semantic);
+        // EARLY RETURN 1: No frame ID
+        if ($frameId === null) {
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "No frame ID → Artifact");
+            return TaggingDecision::artifact('No frame ID');
         }
         
-        // STEP 2: No semantic element - this is a text fragment or reflow frame
-        // Use simple inheritance from immediate parent
-        $parentElement = $this->tree->findContentContainerParent($frameId);
-        
-        if ($parentElement !== null) {
-            $pdfTag = $parentElement->getPdfStructureTag();
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("Frame %s inherits from parent <%s> /%s (frame %s)", 
-                    $frameId, $parentElement->tag, $pdfTag, $parentElement->id)
-            );
-            return TaggingDecision::inherit($parentElement, $pdfTag);
+        // EARLY RETURN 2: No semantic element → Try parent (text fragment)
+        $semantic = $tree->getNodeById($frameId);
+        if ($semantic === null) {
+            return self::handleMissingNode($tree, $frameId);
         }
         
-        // STEP 3: No parent found → Artifact (e.g., TCPDF footer)
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            "No semantic element or parent for frame {$frameId} → Artifact"
-        );
-        return TaggingDecision::artifact('No semantic element (e.g., TCPDF footer)');
-    }
-    
-    /**
-     * Process a semantic node that exists (simplified logic)
-     * 
-     * @param SemanticNode $semantic The semantic node to process
-     * @return TaggingDecision The tagging decision
-     */
-    private function processSemanticElement(SemanticNode $semantic): TaggingDecision
-    {
-        // Check if decorative
+        // EARLY RETURN 3: Decorative element → Artifact
         if ($semantic->isDecorative()) {
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 sprintf("Element %s is decorative → Artifact", $semantic->id)
@@ -181,7 +136,7 @@ class TaggingManager
             return TaggingDecision::artifact(sprintf('Decorative <%s>', $semantic->tag));
         }
         
-        // Check if transparent inline tag (BEFORE resolving parent!)
+        // EARLY RETURN 4: Transparent inline tag → Transparent
         if ($semantic->isTransparentInlineTag()) {
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 sprintf("Element %s is transparent <%s> → Transparent (styling only)", 
@@ -190,29 +145,71 @@ class TaggingManager
             return TaggingDecision::transparent(sprintf('Transparent <%s>', $semantic->tag));
         }
         
-        // For #text nodes, resolve to parent element
+        // EARLY RETURN 5: #text node → Use parent element
         if ($semantic->tag === '#text') {
-            $parent = $this->tree->findContentContainerParent($semantic->id);
-            
-            if ($parent === null) {
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("Could not resolve #text parent for %s → Artifact", $semantic->id)
-                );
-                return TaggingDecision::artifact('Could not resolve #text parent');
-            }
-            
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("Using parent <%s> for #text node", $parent->tag)
-            );
-            
-            $semantic = $parent;
+            return self::handleTextNode($tree, $semantic);
         }
         
-        // Regular semantic element
+        // FINAL: Regular semantic element → Tagged
         $pdfTag = $semantic->getPdfStructureTag();
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
             sprintf("Resolved frame %s: <%s> → /%s", $semantic->id, $semantic->tag, $pdfTag)
         );
         return TaggingDecision::tagged($semantic, $pdfTag);
+    }
+    
+    /**
+     * Handle missing node (text fragment or reflow frame)
+     * 
+     * @param SemanticTree $tree The semantic tree
+     * @param string $frameId Frame ID
+     * @return TaggingDecision Inherit from parent or Artifact
+     */
+    private static function handleMissingNode(SemanticTree $tree, string $frameId): TaggingDecision
+    {
+        $parent = $tree->findContentContainerParent($frameId);
+        
+        // No parent found → Artifact
+        if ($parent === null) {
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                "No semantic element or parent for frame {$frameId} → Artifact"
+            );
+            return TaggingDecision::artifact('No semantic element (e.g., TCPDF footer)');
+        }
+        
+        // Parent found → Inherit
+        $pdfTag = $parent->getPdfStructureTag();
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+            sprintf("Frame %s inherits from parent <%s> /%s (frame %s)", 
+                $frameId, $parent->tag, $pdfTag, $parent->id)
+        );
+        return TaggingDecision::inherit($parent, $pdfTag);
+    }
+    
+    /**
+     * Handle #text node (resolve to parent element)
+     * 
+     * @param SemanticTree $tree The semantic tree
+     * @param SemanticNode $textNode The #text node
+     * @return TaggingDecision Tagged with parent's tag or Artifact
+     */
+    private static function handleTextNode(SemanticTree $tree, SemanticNode $textNode): TaggingDecision
+    {
+        $parent = $tree->findContentContainerParent($textNode->id);
+        
+        // No parent found → Artifact
+        if ($parent === null) {
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                sprintf("Could not resolve #text parent for %s → Artifact", $textNode->id)
+            );
+            return TaggingDecision::artifact('Could not resolve #text parent');
+        }
+        
+        // Parent found → Tag with parent's tag
+        $pdfTag = $parent->getPdfStructureTag();
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+            sprintf("Using parent <%s> for #text node → /%s", $parent->tag, $pdfTag)
+        );
+        return TaggingDecision::tagged($parent, $pdfTag);
     }
 }
