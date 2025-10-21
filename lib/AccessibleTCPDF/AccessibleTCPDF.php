@@ -1249,7 +1249,7 @@ class AccessibleTCPDF extends TCPDF
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "frameId={$this->currentFrameId}, txt=" . substr($txt, 0, 50));
         
         // ====================================================================
-        // PHASE 1: TAGGING RESOLUTION - Determine WHAT to tag
+        // PHASE 1: TAGGING RESOLUTION - Determine WHAT to tag (SIMPLIFIED)
         // ====================================================================
         $decision = $this->taggingManager->resolveTagging($this->currentFrameId);
         

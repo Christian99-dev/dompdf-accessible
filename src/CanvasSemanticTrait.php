@@ -48,13 +48,22 @@ trait CanvasSemanticTrait
     {        
         $this->_semantic_elements[$semanticElement->id] = $semanticElement;
         
+        // Get text content for debugging
+        $textContent = 'N/A';
+        if (isset($semanticElement->attributes['text_content'])) {
+            $textContent = substr($semanticElement->attributes['text_content'], 0, 100);
+        }
+        
         SimpleLogger::log(
             "canvas_semantic_trait_logs",
             "registerSemanticElement()",
             sprintf(
-                "Registered: %s | %s",
+                "REGISTER: frame_%s | <%s> [%s] | parent: %s | text: '%s'",
                 $semanticElement->id,
-                $semanticElement
+                $semanticElement->tag,
+                $semanticElement->display,
+                $semanticElement->parentId ?? 'none',
+                $textContent
             )
         );  
     }    
