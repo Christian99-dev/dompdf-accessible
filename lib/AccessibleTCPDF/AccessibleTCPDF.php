@@ -317,6 +317,9 @@ class AccessibleTCPDF extends TCPDF
         // Track MCID → StructElem mapping for ParentTree
         $mcidToObjId = [];
         
+        // Track HTML ID → StructElem Object ID mapping (for TD Headers attribute)
+        $htmlIdToObjId = [];
+        
         // Output ALL StructElems (including non-rendered containers)
         foreach ($allSemanticElements as $semantic) {
             // Allocate object ID NOW (immediately before output)
@@ -325,6 +328,12 @@ class AccessibleTCPDF extends TCPDF
             
             // Get PDF structure tag
             $pdfTag = $semantic->getPdfStructureTag();
+            
+            // Track HTML id attribute for TH elements (for Headers references)
+            $htmlId = $semantic->getAttribute('id', null);
+            if ($htmlId !== null && $htmlId !== '' && $pdfTag === 'TH') {
+                $htmlIdToObjId[$htmlId] = $objId;
+            }
             
             // Determine parent: lookup via findParent() or fallback to Document
             $parent = $semantic->findParent($this->semanticElementsRef, false);
@@ -382,6 +391,51 @@ class AccessibleTCPDF extends TCPDF
             if ($semantic->isImage() && $semantic->hasAltText()) {
                 $altText = TCPDF_STATIC::_escape($semantic->getAltText());
                 $out .= ' /Alt (' . $altText . ')';
+            }
+            
+            // Add TH Scope attribute in /A dictionary (PDF/UA Rule 81)
+            if ($pdfTag === 'TH') {
+                // Default scope: Column (most common for header cells)
+                // Could be enhanced to detect Row/Both scope from HTML attributes
+                $scope = 'Column';
+                $out .= ' /A << /O /Table /Scope /' . $scope . ' >>';
+                
+                // Add ID if present in HTML (for IDTree and Headers references)
+                $thId = $semantic->getAttribute('id', null);
+                if ($thId !== null && $thId !== '') {
+                    $out .= ' /ID (' . TCPDF_STATIC::_escape($thId) . ')';
+                }
+            }
+            
+            // Add TD Headers attribute in /A dictionary (PDF/UA Rule 10)
+            if ($pdfTag === 'TD') {
+                $headersAttr = $semantic->getAttribute('headers', null);
+                if ($headersAttr !== null && $headersAttr !== '') {
+                    // headers attribute can be space-separated list of HTML IDs (strings, not obj refs!)
+                    $headerIds = array_filter(array_map('trim', explode(' ', trim($headersAttr))));
+                    if (!empty($headerIds)) {
+                        // Headers should be ID strings that match TH /ID values
+                        $headerIdStrings = array_map(function($id) {
+                            return '(' . TCPDF_STATIC::_escape($id) . ')';
+                        }, $headerIds);
+                        $out .= ' /A << /O /Table /Headers [' . implode(' ', $headerIdStrings) . '] >>';
+                    }
+                }
+            }
+            
+            // Add RowSpan/ColSpan for table cells (PDF/UA table structure)
+            if ($pdfTag === 'TD' || $pdfTag === 'TH') {
+                // Check if cell has rowspan > 1
+                $rowspan = (int)$semantic->getAttribute('rowspan', '1');
+                if ($rowspan > 1) {
+                    $out .= ' /RowSpan ' . $rowspan;
+                }
+                
+                // Check if cell has colspan > 1
+                $colspan = (int)$semantic->getAttribute('colspan', '1');
+                if ($colspan > 1) {
+                    $out .= ' /ColSpan ' . $colspan;
+                }
             }
             
             $out .= ' >>';
@@ -505,7 +559,15 @@ class AccessibleTCPDF extends TCPDF
         // Standard types (H1, P, Link, Div, etc.) must NOT be in RoleMap
         $out .= ' /RoleMap << /Strong /Span /Em /Span >>';
         
-        $out .= sprintf(' /IDTree << /Nums [ 0 %d 0 R ] >>', $documentObjId);
+        // Build IDTree for TH elements with id attributes (for TD Headers references)
+        if (!empty($htmlIdToObjId)) {
+            $idTreeEntries = [];
+            foreach ($htmlIdToObjId as $htmlId => $objId) {
+                $idTreeEntries[] = '(' . TCPDF_STATIC::_escape($htmlId) . ') ' . $objId . ' 0 R';
+            }
+            $out .= ' /IDTree << /Names [' . implode(' ', $idTreeEntries) . '] >>';
+        }
+        
         $out .= ' >>';
         $out .= "\n".'endobj';
         $this->_out($out);  // _newobj() already output "N 0 obj"
@@ -669,7 +731,7 @@ class AccessibleTCPDF extends TCPDF
         if ($this->pdfua && $this->page > 0 && $this->state == 2) {
             $this->_out('/Artifact BMC');
             parent::setExtGState($gs);
-            $this->_out('EMC');
+            $this->_out("\nEMC");
         } else {
             parent::setExtGState($gs);
         }

@@ -127,7 +127,7 @@ class DrawingManager
             // No active BDC: Simple Artifact wrap
             return [
                 'before' => '/Artifact BMC',
-                'after' => 'EMC'
+                'after' => "\nEMC"
             ];
         }
     }

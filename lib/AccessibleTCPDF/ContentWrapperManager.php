@@ -100,7 +100,7 @@ class ContentWrapperManager
             sprintf("Wrapping as Artifact (%d bytes)", strlen($pdfCode))
         );
         
-        return "/Artifact BMC\n" . $pdfCode . "EMC\n";
+        return "/Artifact BMC\n" . $pdfCode . "\nEMC\n";
     }
     
     
