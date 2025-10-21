@@ -14,10 +14,11 @@ use Dompdf\SemanticElement;
  * This immutable value object represents the tagging decision
  * for a rendered element.
  * 
- * THREE MODES:
+ * FOUR MODES:
  * 1. ARTIFACT: Content wrapped as /Artifact (no structure)
  * 2. TAGGED: Content wrapped in BDC/EMC with structure tag
  * 3. TRANSPARENT: Content inherits parent's BDC (styling only, no separate tag)
+ * 4. LINE_BREAK: Line-break frame continues parent's BDC (multi-line text)
  * 
  * @package dompdf-accessible
  */
@@ -28,6 +29,7 @@ class TaggingDecision
         public readonly string $pdfTag,
         public readonly bool $isArtifact,
         public readonly bool $isTransparent,
+        public readonly bool $isLineBreak,
         public readonly string $reason = ''
     ) {}
     
@@ -36,7 +38,7 @@ class TaggingDecision
      */
     public static function artifact(string $reason = ''): self
     {
-        return new self(null, '', true, false, $reason);
+        return new self(null, '', true, false, false, $reason);
     }
     
     /**
@@ -44,7 +46,7 @@ class TaggingDecision
      */
     public static function tagged(SemanticElement $element, string $pdfTag): self
     {
-        return new self($element, $pdfTag, false, false, '');
+        return new self($element, $pdfTag, false, false, false, '');
     }
     
     /**
@@ -55,7 +57,21 @@ class TaggingDecision
      */
     public static function transparent(string $reason = ''): self
     {
-        return new self(null, '', false, true, $reason);
+        return new self(null, '', false, true, false, $reason);
+    }
+    
+    /**
+     * Create Line-Break decision (frame continues parent's BDC)
+     * 
+     * Used for: Line-break frames created during text reflow
+     * These frames have no semantic element but should continue parent's BDC.
+     * 
+     * @param SemanticElement $parentElement The parent element to continue
+     * @param string $pdfTag The PDF tag from parent
+     */
+    public static function lineBreak(SemanticElement $parentElement, string $pdfTag): self
+    {
+        return new self($parentElement, $pdfTag, false, false, true, 'Line-break frame');
     }
 }
 
@@ -123,7 +139,7 @@ class TaggingManager
      * Resolve tagging decision for current frame
      * 
      * This is the MAIN method that implements the complete tagging logic:
-     * 1. No semantic element → Artifact (e.g., TCPDF footer)
+     * 1. No semantic element → Check if line-break frame OR Artifact
      * 2. Decorative element → Artifact (aria-hidden, role=presentation)
      * 3. Transparent inline tag → Transparent (styling only, no BDC)
      * 4. #text node → Use parent element for tagging
@@ -138,6 +154,22 @@ class TaggingManager
         $semantic = $this->getCurrentElement($frameId);
         
         if ($semantic === null) {
+            // SPECIAL CASE: Check if this is a line-break frame
+            // Line-break frames are created during reflow AFTER semantic registration
+            // They have no semantic element, but should continue parent's BDC
+            
+            $lineBreakParent = $this->findLineBreakParent($frameId);
+            
+            if ($lineBreakParent !== null) {
+                $pdfTag = $lineBreakParent->getPdfStructureTag();
+                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                    sprintf("Frame %s is line-break → continue parent <%s> /%s", 
+                        $frameId, $lineBreakParent->tag, $pdfTag)
+                );
+                return TaggingDecision::lineBreak($lineBreakParent, $pdfTag);
+            }
+            
+            // No parent found → real Artifact (e.g., TCPDF footer)
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 "No semantic element for frame {$frameId} → Artifact"
             );
@@ -218,6 +250,61 @@ class TaggingManager
         
         // CASE 2: Regular element → use as-is
         return $semantic;
+    }
+    
+    /**
+     * Find parent semantic element for line-break frames
+     * 
+     * Line-break frames are created during text reflow AFTER semantic registration.
+     * They have no semantic element themselves, but should continue parent's BDC.
+     * 
+     * This method searches BACKWARDS through frame IDs to find the most recent
+     * frame that has a semantic element (and is not transparent or decorative).
+     * 
+     * Example:
+     * - Frame 7: "Lorem ipsum..." → /P (has semantic)
+     * - Frame 9: "consectetur..." → NO semantic (line-break) → should use Frame 7's /P
+     * - Frame 10: "Ipsam..." → NO semantic (line-break) → should use Frame 7's /P
+     * 
+     * @param string|null $frameId The line-break frame ID
+     * @return SemanticElement|null Parent element to continue, or null
+     */
+    private function findLineBreakParent(?string $frameId): ?SemanticElement
+    {
+        if ($frameId === null) {
+            return null;
+        }
+        
+        // Search backwards from current frame ID
+        for ($searchId = (int)$frameId - 1; $searchId >= 0; $searchId--) {
+            $searchIdStr = (string)$searchId;
+            
+            if (!isset($this->semanticElementsRef[$searchIdStr])) {
+                continue; // This frame also has no semantic → keep searching
+            }
+            
+            $candidate = $this->semanticElementsRef[$searchIdStr];
+            
+            // Skip #text nodes (they use parent for tagging)
+            if ($candidate->tag === '#text') {
+                continue;
+            }
+            
+            // Skip transparent inline tags (they don't create BDC)
+            if ($candidate->isTransparentInlineTag()) {
+                continue;
+            }
+            
+            // Skip decorative elements (they become Artifacts)
+            if ($candidate->isDecorative()) {
+                continue;
+            }
+            
+            // Found valid parent with structure tag!
+            return $candidate;
+        }
+        
+        return null; // No suitable parent found → real Artifact
     }
     
     /**
