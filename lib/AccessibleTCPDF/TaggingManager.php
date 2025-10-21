@@ -123,21 +123,6 @@ class TaggingManager
     }
     
     /**
-     * Get current semantic node by frame ID (O(1) HashMap lookup!)
-     * 
-     * @param string|null $frameId Frame ID being rendered
-     * @return SemanticNode|null Node or null if not found
-     */
-    public function getCurrentElement(?string $frameId): ?SemanticNode
-    {
-        if ($frameId === null) {
-            return null;
-        }
-        
-        return $this->tree->getNodeById($frameId);  // O(1)!
-    }
-    
-    /**
      * Resolve tagging decision for current frame
      * 
      * This is the MAIN method that implements the complete tagging logic:
@@ -152,8 +137,8 @@ class TaggingManager
      */
     public function resolveTagging(?string $frameId): TaggingDecision
     {
-        // STEP 1: Try to get direct semantic element
-        $semantic = $this->getCurrentElement($frameId);
+        // STEP 1: Try to get direct semantic element from tree
+        $semantic = $frameId !== null ? $this->tree->getNodeById($frameId) : null;
         
         if ($semantic !== null) {
             // We have a direct semantic element - process it normally
