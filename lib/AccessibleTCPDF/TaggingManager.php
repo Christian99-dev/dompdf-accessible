@@ -329,6 +329,11 @@ class TaggingManager
                     continue;
                 }
                 
+                // Always skip <br> parents (line breaks don't define structure)
+                if ($parent->tag === 'br') {
+                    continue;
+                }
+                
                 // Optionally skip transparent inline styling tags
                 if ($skipTransparentTags && $parent->isTransparentInlineTag()) {
                     continue;
