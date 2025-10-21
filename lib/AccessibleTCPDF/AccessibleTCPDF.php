@@ -57,15 +57,14 @@ class AccessibleTCPDF extends TCPDF
     
 
     // ========================================================================
-    // LEGACY STATE (will be moved to managers)
+    // STATE MANAGEMENT
     // ========================================================================
     
     /**
-     * Reference to semantic elements storage from Canvas
-     * This is a direct reference to the $_semantic_elements array from CanvasSemanticTrait
-     * @var SemanticElement[]|null
+     * Semantic tree for O(1) node access and tree navigation
+     * @var SemanticTree|null
      */
-    private ?array $semanticElementsRef = null;
+    private ?SemanticTree $semanticTree = null;
 
     /**
      * Current frame ID being rendered
@@ -128,7 +127,7 @@ class AccessibleTCPDF extends TCPDF
      * @param boolean $diskcache Enable disk caching
      * @param boolean $pdfa Enable PDF/A mode 
      * @param boolean $pdfua Enable PDF/UA mode
-     * @param array|null $semanticElementsRef Reference to semantic elements array from Canvas
+     * @param SemanticTree|null $semanticTree Semantic tree for accessibility
      */
     public function __construct(
         $orientation = 'P', 
@@ -139,12 +138,11 @@ class AccessibleTCPDF extends TCPDF
         $diskcache = false, 
         $pdfa = false, 
         $pdfua = false,
-        ?array &$semanticElementsRef = null,
-        ?SemanticTree $semanticTree = null,
+        ?SemanticTree $semanticTree = null
     ) 
     {        
         parent::__construct($orientation, $unit, $format, $unicode, $encoding, $diskcache, $pdfa);
-        $this->pdfua = $pdfua === true && $semanticElementsRef !== null;
+        $this->pdfua = $pdfua === true && $semanticTree !== null;
         if(!$this->pdfua) return;
 
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "PDF/UA mode enabled.");
@@ -176,20 +174,20 @@ class AccessibleTCPDF extends TCPDF
             'zapfdingbats' => 'dejavusans'
         ];
         
-        // Store reference to semantic elements from Canvas
-        $this->semanticElementsRef = &$semanticElementsRef;
+        // Store semantic tree reference
+        $this->semanticTree = $semanticTree;
         
         // BDC State Manager - No dependencies
         $this->bdcManager = new BDCStateManager();
         
-        // Tagging Manager - Needs semantic elements reference
-        $this->taggingManager = new TaggingManager($this->semanticElementsRef);
+        // Tagging Manager - Needs semantic tree
+        $this->taggingManager = new TaggingManager($this->semanticTree);
         
         // Content Wrapper Manager - No dependencies
         $this->contentWrapper = new ContentWrapperManager();
         
-        // Drawing Manager - No dependencies
-        $this->drawingManager = new DrawingManager();
+        // Drawing Manager - Needs semantic tree
+        $this->drawingManager = new DrawingManager($this->semanticTree);
     }
 
     /**
@@ -242,8 +240,11 @@ class AccessibleTCPDF extends TCPDF
         foreach ($this->structureTree as $struct) {
             $semantic = $struct['semantic'];
             
-            // Collect this element + all its ancestors
-            $ancestors = $semantic->collectAncestors($this->semanticElementsRef);
+            // NEW TREE APPROACH: O(n) ancestor collection via direct parent references!
+            $ancestors = [$semantic->id => $semantic];
+            foreach ($semantic->getAncestors() as $ancestor) {
+                $ancestors[$ancestor->id] = $ancestor;
+            }
             
             foreach ($ancestors as $frameId => $ancestor) {
                 if (!isset($allSemanticElements[$frameId])) {
@@ -256,15 +257,19 @@ class AccessibleTCPDF extends TCPDF
             sprintf("Collected %d semantic elements (including containers)", count($allSemanticElements))
         );
         
+        // NEW: Pre-calculate ALL depths for O(1) sorting (MAJOR OPTIMIZATION!)
+        foreach ($allSemanticElements as $semantic) {
+            $semantic->getDepth();  // Cache depth in node
+        }
+        
         // Sort by depth (root first, leaves last) AND element ID (parents before children)
-        // to ensure parents are created before children in PDF output
+        // Now O(n log n) instead of O(n³)!
         usort($allSemanticElements, function($a, $b) {
-            $depthCompare = $a->getDepth($this->semanticElementsRef) <=> $b->getDepth($this->semanticElementsRef);
+            $depthCompare = $a->getDepth() <=> $b->getDepth();  // O(1) cached!
             if ($depthCompare !== 0) {
                 return $depthCompare; // Different depths: sort by depth
             }
             // Same depth: sort by ID (lower ID = parent comes first)
-            // IDs are Frame IDs as strings, cast to int for numeric comparison
             return (int)$a->id <=> (int)$b->id;
         });
         
@@ -338,8 +343,8 @@ class AccessibleTCPDF extends TCPDF
                 $htmlIdToObjId[$htmlId] = $objId;
             }
             
-            // Determine parent: lookup via findParent() or fallback to Document
-            $parent = $semantic->findParent($this->semanticElementsRef, false);
+            // NEW TREE APPROACH: O(1) parent lookup via direct reference!
+            $parent = $semantic->getParent();
             $parentObjId = $parent !== null && isset($frameIdToObjId[$parent->id])
                 ? $frameIdToObjId[$parent->id]
                 : $documentObjId;
@@ -375,18 +380,19 @@ class AccessibleTCPDF extends TCPDF
                     $out .= ' /K [' . implode(' ', $mcids) . ']';
                 }
             } else {
-                // Container element (not rendered) → find children StructElems
-                $childFrameIds = [];
-                foreach ($allSemanticElements as $potentialChild) {
-                    $childParent = $potentialChild->findParent($this->semanticElementsRef, false);
-                    if ($childParent !== null && $childParent->id === $semantic->id) {
-                        $childFrameIds[] = $potentialChild->id;
-                    }
-                }
+                // NEW TREE APPROACH: O(1) semantic children access!
+                $children = $semantic->getChildren();
                 
-                if (!empty($childFrameIds)) {
-                    $childObjIds = array_map(fn($fid) => $frameIdToObjId[$fid], $childFrameIds);
-                    $out .= ' /K [' . implode(' 0 R ', $childObjIds) . ' 0 R]';
+                if (!empty($children)) {
+                    // Filter out children that don't have valid StructElem objIds (e.g., #text nodes)
+                    $childObjIds = array_filter(
+                        array_map(fn($child) => $frameIdToObjId[$child->id] ?? null, $children),
+                        fn($objId) => $objId !== null && $objId > 0
+                    );
+                    
+                    if (!empty($childObjIds)) {
+                        $out .= ' /K [' . implode(' 0 R ', $childObjIds) . ' 0 R]';
+                    }
                 }
             }
             
@@ -480,9 +486,10 @@ class AccessibleTCPDF extends TCPDF
         // Combine all StructElem IDs for Document's /K array
         // IMPORTANT: Only include TOP-LEVEL elements (parent not in structure tree)
         // Otherwise we get duplicate references (parent's /K already references children)
+        // NEW TREE APPROACH: O(1) parent access!
         $topLevelObjIds = [];
         foreach ($allSemanticElements as $semantic) {
-            $parent = $semantic->findParent($this->semanticElementsRef, false);
+            $parent = $semantic->getParent();  // O(1) direct reference!
             // Top-level = no parent OR parent not in our structure tree
             if ($parent === null || !isset($frameIdToObjId[$parent->id])) {
                 $topLevelObjIds[] = $frameIdToObjId[$semantic->id];
@@ -600,13 +607,12 @@ class AccessibleTCPDF extends TCPDF
             return;
         }
         
-        // Get decision from DrawingManager
+        // Get decision from DrawingManager (no array parameter needed!)
         $context = $this->drawingManager->analyzeDrawingContext(
             $operationName, 
             $this->currentFrameId, 
             $this->bdcManager->isInsideTaggedContent(),
-            $this->bdcManager->getActiveBDCFrame(),
-            $this->semanticElementsRef
+            $this->bdcManager->getActiveBDCFrame()
         );
         
         // Close BDC if needed (for decorative elements that should end semantic tagging)

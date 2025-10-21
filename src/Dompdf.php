@@ -818,8 +818,10 @@ class Dompdf
 
         // NEW: Register all semantic elements BEFORE rendering starts
         // Get the root frame from the FrameTree
+        // The tree will only populate, if a SemanticTree is set in the Canvas
+        // This saves unnecessary processing if no semantic processing is desired
         $rootFrame = $this->tree->get_root();
-        if ($rootFrame !== null) {
+        if ($rootFrame !== null && $canvas->getSemanticTree() !== null) {
             $this->_registerAllSemanticElements($rootFrame);
         }
 
@@ -886,9 +888,7 @@ class Dompdf
             __METHOD__,
             "=== Starting DUAL semantic registration (Array + Tree) ==="
         );
-        
-        // NEW: Initialize tree BEFORE registration
-        $this->canvas->initializeSemanticTree();
+    
         
         // Simplified recursive function - only register semantic containers
         $registerSemanticContainers = function(Frame $frame) use (&$registerSemanticContainers, &$registeredCount) {

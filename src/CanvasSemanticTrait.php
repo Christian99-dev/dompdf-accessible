@@ -91,18 +91,6 @@ trait CanvasSemanticTrait
     // ========================================================================
     
     /**
-     * Initialize semantic tree (call once before registration!)
-     */
-    public function initializeSemanticTree(): void
-    {
-        $this->_semantic_tree = new SemanticTree();
-        
-        SimpleLogger::log("canvas_semantic_trait_logs", __METHOD__, 
-            "Semantic Tree initialized"
-        );
-    }
-    
-    /**
      * Get the semantic tree for direct access
      * 
      * Usage: $canvas->getSemanticTree()->add($id, $tag, $attrs, $display, $parentId)

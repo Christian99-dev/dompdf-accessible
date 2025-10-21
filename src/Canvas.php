@@ -533,14 +533,4 @@ interface Canvas
      */
     public function getSemanticTree(): ?SemanticTree;
 
-    /**
-     * Initialize the semantic tree (NEW!)
-     * 
-     * This method creates the SemanticTree instance and prepares it for use.
-     * Should be called once before rendering starts.
-     * 
-     * ! no implementation needed -- only use the trait in the canvas implementation
-     */
-    public function initializeSemanticTree(): void;
-
 }

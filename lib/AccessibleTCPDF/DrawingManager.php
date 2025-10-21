@@ -16,6 +16,8 @@
  */
 
 use Dompdf\SimpleLogger;
+use Dompdf\SemanticTree;
+use Dompdf\SemanticNode;
 
 /**
  * DrawingManager - Static helper methods for PDF/UA drawing decisions
@@ -23,23 +25,36 @@ use Dompdf\SimpleLogger;
 class DrawingManager
 {
     /**
+     * @var SemanticTree The semantic tree
+     */
+    private SemanticTree $tree;
+    
+    /**
+     * Constructor
+     * 
+     * @param SemanticTree $tree The semantic tree
+     */
+    public function __construct(SemanticTree $tree)
+    {
+        $this->tree = $tree;
+    }
+    
+    /**
      * Analyze drawing context and return decision data
      * 
      * This is the CORE helper method that provides decision logic for drawing operations.
      * 
      * @param string $operationName Name for logging (Line, Rect, etc.)
      * @param string|null $currentFrameId Current frame being processed
-     * @param array|null $activeBDC Reference to active BDC frame
      * @param bool $isInsideTaggedContent Whether we are currently inside tagged content
-     * @param array|null $semanticElementsRef Reference to semantic elements
+     * @param array|null $activeBDC Reference to active BDC frame
      * @return array ['should_close_bdc' => bool, 'wrap_as_artifact' => bool]
      */
     public function analyzeDrawingContext(
         string $operationName, 
         ?string $currentFrameId, 
         bool $isInsideTaggedContent,
-        ?array $activeBDC,
-        ?array $semanticElementsRef
+        ?array $activeBDC
     ): array {
         SimpleLogger::log("accessible_tcpdf_logs", $operationName, sprintf(
             "FRAME_ID: %s | ACTIVE_BDC: %s | INSIDE_BDC: %s",
@@ -63,13 +78,13 @@ class DrawingManager
         }
         
         // Different frame → Analyze semantic relationship
-        if ($currentFrameId !== null && $semanticElementsRef !== null) {
-            $activeBDCElement = $semanticElementsRef[$activeBDC['semanticId']] ?? null;
-            $currentElement = $semanticElementsRef[$currentFrameId] ?? null;
+        if ($currentFrameId !== null) {
+            $activeBDCElement = $this->tree->getNodeById($activeBDC['semanticId']);
+            $currentElement = $this->tree->getNodeById($currentFrameId);
             
             if ($activeBDCElement && $currentElement) {
                 // Check if current element is semantic child of active BDC element
-                $parent = $currentElement->findParent($semanticElementsRef, true);
+                $parent = $currentElement->getParent();
                 
                 if ($parent && $parent->id === $activeBDCElement->id) {
                     SimpleLogger::log("accessible_tcpdf_logs", $operationName, 

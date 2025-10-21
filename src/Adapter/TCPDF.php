@@ -12,6 +12,7 @@ use Dompdf\CanvasSemanticTrait;
 use Dompdf\Dompdf;
 use Dompdf\FontMetrics;
 use Dompdf\SimpleLogger;
+use Dompdf\SemanticTree;
 
 // Include our local AccessibleTCPDF
 require_once __DIR__ . '/../../lib/AccessibleTCPDF/AccessibleTCPDF.php';
@@ -167,6 +168,15 @@ class TCPDF implements Canvas
 
         // Initialize TCPDF
         $tcpdf_orientation = strtolower($orientation) === "landscape" ? 'L' : 'P';
+
+
+        // Initializing the semantic tree in the canvas constructor is optional.
+        // If omitted, the renderer will skip populating it, allowing for improved performance
+        // in scenarios where semantic structure is unnecessary.
+        // For PDF backends that do not require semantic information, simply avoid initializing it
+        // to reduce overhead.
+        $this->_semantic_tree = new SemanticTree();
+        
         $this->_pdf = new AccessibleTCPDF(
             $tcpdf_orientation, 
             'pt', 
@@ -176,7 +186,6 @@ class TCPDF implements Canvas
             false,
             $this->_dompdf->getOptions()->isPDFAEnabled(),     
             $this->_dompdf->getOptions()->isPDFUAEnabled(),
-            $this->_semantic_elements,
             $this->_semantic_tree
         ); 
 

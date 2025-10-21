@@ -6,7 +6,7 @@
  */
 
 use Dompdf\SimpleLogger;
-use Dompdf\SemanticElement;
+use Dompdf\SemanticNode;
 
 require_once __DIR__ . '/BDCAction.php';
 
@@ -249,7 +249,7 @@ class BDCStateManager
      * 5. Line-break status (should we continue parent's BDC)
      * 
      * @param string $currentFrameId Current frame ID from renderer
-     * @param SemanticElement|null $targetElement Resolved target element (after transparency resolution)
+     * @param SemanticNode|null $targetElement Resolved target element (after transparency resolution)
      * @param bool $isTransparent Is this a transparent inline tag?
      * @param bool $isArtifact Is this artifact content?
      * @param bool $isLineBreak Is this a line-break frame continuing parent?
@@ -257,7 +257,7 @@ class BDCStateManager
      */
     public function determineBDCAction(
         string $currentFrameId,
-        ?SemanticElement $targetElement,
+        ?SemanticNode $targetElement,
         bool $isTransparent,
         bool $isArtifact,
         bool $isLineBreak = false
