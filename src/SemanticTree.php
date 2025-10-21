@@ -400,6 +400,23 @@ class SemanticNode
         return $this->tag === 'a';
     }
     
+    /**
+     * Check if element is table-related
+     * 
+     * Table-related elements include table structure tags (table, tr, td, th)
+     * and table section tags (thead, tbody, tfoot).
+     * 
+     * This is used by DrawingManager to determine if drawings should be
+     * wrapped as Artifacts when inside table structures.
+     * 
+     * @return bool True if element is table-related
+     */
+    public function isTableRelated(): bool
+    {
+        $tableElements = ['table', 'tr', 'th', 'td', 'thead', 'tbody', 'tfoot'];
+        return in_array($this->tag, $tableElements, true);
+    }
+    
     // ========================================================================
     // PDF STRUCTURE MAPPING (copied from SemanticElement)
     // ========================================================================

@@ -30,6 +30,13 @@ class DrawingManager
     private SemanticTree $tree;
     
     /**
+     * PDF/UA Artifact wrapping operators (constants for reusability)
+     */
+    private const ARTIFACT_OPEN = '/Artifact BMC';
+    private const ARTIFACT_CLOSE = "\nEMC";
+    private const EMC = "EMC\n";
+    
+    /**
      * Constructor
      * 
      * @param SemanticTree $tree The semantic tree
@@ -93,7 +100,7 @@ class DrawingManager
                 }
                 
                 // REFINED LOGIC: Check if this is a table-related drawing
-                if (self::isTableRelatedDrawing($currentElement)) {
+                if ($currentElement->isTableRelated()) {
                     SimpleLogger::log("accessible_tcpdf_logs", $operationName, 
                         "→ Table-related drawing: DON'T close BDC, just wrap as Artifact");
                     return ['should_close_bdc' => false, 'wrap_as_artifact' => true];
@@ -108,41 +115,40 @@ class DrawingManager
     }
     
     /**
-     * Helper: Check if drawing operation is table-related (borders, etc.)
-     * 
-     * Table-related drawings should be Artifacts but NOT close active BDCs
-     * because table content (TD elements) still needs to render after borders.
-     * 
-     * @param SemanticElement|null $element The element being drawn
-     * @return bool True if this is table-related drawing
-     */
-    public function isTableRelatedDrawing($element): bool 
-    {
-        if (!$element) return false;
-        
-        $tableElements = ['table', 'tr', 'th', 'td', 'thead', 'tbody', 'tfoot'];
-        return in_array($element->tag, $tableElements, true);
-    }
-    
-    /**
      * Generate PDF operators for wrapping drawing as Artifact
+     * 
+     * This method returns operators for the Close-Draw-Reopen pattern:
+     * 1. Close current BDC (EMC)
+     * 2. Open Artifact context (/Artifact BMC)
+     * 3. Draw graphics
+     * 4. Close Artifact (EMC)
+     * 5. Reopen original BDC (/Tag BDC)
+     * 
+     * This pattern preserves the semantic context while marking graphics as decorative.
      *
-     * @param array $activeBDC The currently active BDC frame data 
+     * @param array|null $activeBDC The currently active BDC frame data 
+     * @return array ['before' => string, 'after' => string]
      */
     public function getArtifactWrapOperators(?array $activeBDC): array
     {
         if ($activeBDC !== null) {
             // UNIVERSAL PATTERN: Close-Draw-Reopen
             // Works for: table borders, text-decoration underlines, any graphics
+            $bdcReopenString = sprintf(
+                "/%s << /MCID %d >> BDC", 
+                $activeBDC['pdfTag'], 
+                $activeBDC['mcid']
+            );
+            
             return [
-                'before' => "EMC\n/Artifact BMC",
-                'after' => "EMC\n/" . $activeBDC['pdfTag'] . ' << /MCID ' . $activeBDC['mcid'] . ' >> BDC'
+                'before' => self::EMC . self::ARTIFACT_OPEN,
+                'after' => self::EMC . $bdcReopenString
             ];
         } else {
             // No active BDC: Simple Artifact wrap
             return [
-                'before' => '/Artifact BMC',
-                'after' => "\nEMC"
+                'before' => self::ARTIFACT_OPEN,
+                'after' => self::ARTIFACT_CLOSE
             ];
         }
     }

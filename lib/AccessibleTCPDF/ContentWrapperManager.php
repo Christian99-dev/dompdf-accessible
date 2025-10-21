@@ -165,37 +165,4 @@ class ContentWrapperManager
         // CASE 3: Tagged content without font injection
         return $cellCode;
     }
-    
-    /**
-     * Check if operation needs wrapping
-     * 
-     * Helper method to determine if a graphics operation needs Artifact wrapping.
-     * 
-     * @param bool $pdfuaMode True if PDF/UA mode is enabled
-     * @param bool $insideBDC True if inside tagged content
-     * @param int $state TCPDF state (2 = rendering page)
-     * @param int $page Current page number
-     * @return bool True if operation needs wrapping
-     */
-    public function shouldWrapOperation(
-        bool $pdfuaMode, 
-        bool $insideBDC, 
-        int $state, 
-        int $page
-    ): bool
-    {
-        // Not PDF/UA mode → no wrapping needed
-        if (!$pdfuaMode) {
-            return false;
-        }
-        
-        // Not rendering a page → no wrapping needed
-        if ($state != 2 || $page <= 0) {
-            return false;
-        }
-        
-        // Inside BDC → suppress (handled by caller)
-        // Outside BDC → wrap as Artifact
-        return !$insideBDC;
-    }
 }
