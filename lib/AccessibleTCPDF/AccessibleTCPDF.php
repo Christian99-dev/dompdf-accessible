@@ -13,7 +13,6 @@ require_once __DIR__ . '/tcpdf/tcpdf.php';
 
 // Load Accessibility Managers
 require_once __DIR__ . '/BDCStateManager.php';
-require_once __DIR__ . '/ContentWrapperManager.php';
 require_once __DIR__ . '/DrawingManager.php';
 require_once __DIR__ . '../../../src/SemanticTree.php';
 
@@ -26,20 +25,14 @@ require_once __DIR__ . '../../../src/SemanticTree.php';
 class AccessibleTCPDF extends TCPDF
 {   
     // ========================================================================
-    // MANAGER INSTANCES - Microservice Architecture
+    // MANAGER INSTANCES
     // ========================================================================
     
     /**
-     * BDC State Manager - Handles BDC/EMC lifecycle
+     * BDC State Manager - Handles BDC/EMC lifecycle and semantic resolution
      * @var BDCStateManager
      */
     private BDCStateManager $bdcManager;
-    
-    /**
-     * Content Wrapper Manager - Font injection & Artifact wrapping
-     * @var ContentWrapperManager
-     */
-    private ContentWrapperManager $contentWrapper;
 
     /**
      * Drawing Manager - Static helper for drawing decisions
@@ -172,9 +165,6 @@ class AccessibleTCPDF extends TCPDF
         
         // BDC State Manager - No dependencies
         $this->bdcManager = new BDCStateManager();
-        
-        // Content Wrapper Manager - No dependencies
-        $this->contentWrapper = new ContentWrapperManager();
         
         // Drawing Manager - Needs semantic tree
         $this->drawingManager = new DrawingManager($this->semanticTree);
@@ -646,9 +636,7 @@ class AccessibleTCPDF extends TCPDF
     // ========================================================================
     
     /**
-     * Override SetFont to redirect Base 14 fonts via ContentWrapperManager
-     * 
-     * REFACTORED: Font mapping delegated to manager
+     * Override SetFont to redirect Base 14 fonts to PDF/UA compliant alternatives
      * 
      * @param string $family Font family
      * @param string $style Font style
@@ -660,8 +648,18 @@ class AccessibleTCPDF extends TCPDF
      */
     public function SetFont($family, $style='', $size=null, $fontfile='', $subset='default', $out=true) {
         if ($this->pdfua) {
-            // Map font via ContentWrapperManager
-            $family = $this->contentWrapper->mapPDFUAFont($family);
+            // Map Base 14 fonts to PDF/UA compliant DejaVu equivalents
+            static $fontMap = [
+                'helvetica' => 'dejavusans',
+                'times' => 'dejavuserif',
+                'courier' => 'dejavusansmono'
+            ];
+            
+            $familyLower = strtolower($family);
+            if (isset($fontMap[$familyLower])) {
+                error_log("[PDF/UA Font Mapping] $family → {$fontMap[$familyLower]}");
+                $family = $fontMap[$familyLower];
+            }
         }
         
         parent::SetFont($family, $style, $size, $fontfile, $subset, $out);
@@ -1251,19 +1249,20 @@ class AccessibleTCPDF extends TCPDF
             $this->page
         );
         
-        // Apply artifact wrapping if needed
+        // Apply artifact wrapping if needed (inline - trivial string concat)
         if ($result['wrapAsArtifact']) {
-            $cellCode = $this->contentWrapper->wrapAsArtifact($cellCode);
+            $cellCode = "/Artifact BMC\n" . $cellCode . "\nEMC\n";
         }
         
         // ====================================================================
         // FONT INJECTION - Always inject font operator into BT...ET blocks
         // ====================================================================
         if (isset($this->CurrentFont['i']) && $this->FontSizePt) {
-            $cellCode = $this->contentWrapper->injectFontOperator(
-                $cellCode, 
-                $this->CurrentFont['i'], 
-                $this->FontSizePt
+            // Inject /F1 12 Tf after every BT command
+            $cellCode = preg_replace(
+                '/\bBT\s+/',
+                sprintf('BT /F%d %F Tf ', $this->CurrentFont['i'], $this->FontSizePt),
+                $cellCode
             );
         }
         
