@@ -31,23 +31,24 @@ class TaggingDecision
         public readonly bool $isArtifact,
         public readonly bool $isTransparent,
         public readonly bool $isLineBreak,
-        public readonly string $reason = ''
+        public readonly string $reason = '',
+        public readonly ?string $frameId = null
     ) {}
     
     /**
      * Create Artifact decision
      */
-    public static function artifact(string $reason = ''): self
+    public static function artifact(string $reason = '', ?string $frameId = null): self
     {
-        return new self(null, '', true, false, false, $reason);
+        return new self(null, '', true, false, false, $reason, $frameId);
     }
     
     /**
      * Create Tagged Content decision
      */
-    public static function tagged(SemanticNode $element, string $pdfTag): self
+    public static function tagged(SemanticNode $element, string $pdfTag, ?string $frameId = null): self
     {
-        return new self($element, $pdfTag, false, false, false, '');
+        return new self($element, $pdfTag, false, false, false, '', $frameId);
     }
     
     /**
@@ -56,9 +57,9 @@ class TaggingDecision
      * Used for: <strong>, <em>, <span>, etc.
      * These elements change font/color but don't create structure elements.
      */
-    public static function transparent(string $reason = ''): self
+    public static function transparent(string $reason = '', ?string $frameId = null): self
     {
-        return new self(null, '', false, true, false, $reason);
+        return new self(null, '', false, true, false, $reason, $frameId);
     }
     
     /**
@@ -70,9 +71,9 @@ class TaggingDecision
      * @param string $pdfTag The PDF tag from parent
      * @param string $reason Optional reason for inheritance
      */
-    public static function inherit(SemanticNode $parentElement, string $pdfTag, string $reason = 'Inherit from parent'): self
+    public static function inherit(SemanticNode $parentElement, string $pdfTag, string $reason = 'Inherit from parent', ?string $frameId = null): self
     {
-        return new self($parentElement, $pdfTag, false, false, true, $reason);
+        return new self($parentElement, $pdfTag, false, false, true, $reason, $frameId);
     }
 }
 
@@ -119,7 +120,7 @@ class TaggingManager
         // EARLY RETURN 1: No frame ID
         if ($frameId === null) {
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "No frame ID → Artifact");
-            return TaggingDecision::artifact('No frame ID');
+            return TaggingDecision::artifact('No frame ID', $frameId);
         }
         
         // EARLY RETURN 2: No semantic element → Try parent (text fragment)
@@ -133,7 +134,7 @@ class TaggingManager
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 sprintf("Element %s is decorative → Artifact", $semantic->id)
             );
-            return TaggingDecision::artifact(sprintf('Decorative <%s>', $semantic->tag));
+            return TaggingDecision::artifact(sprintf('Decorative <%s>', $semantic->tag), $frameId);
         }
         
         // EARLY RETURN 4: Transparent inline tag → Transparent
@@ -142,7 +143,7 @@ class TaggingManager
                 sprintf("Element %s is transparent <%s> → Transparent (styling only)", 
                     $semantic->id, $semantic->tag)
             );
-            return TaggingDecision::transparent(sprintf('Transparent <%s>', $semantic->tag));
+            return TaggingDecision::transparent(sprintf('Transparent <%s>', $semantic->tag), $frameId);
         }
         
         // EARLY RETURN 5: #text node → Use parent element
@@ -155,7 +156,7 @@ class TaggingManager
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
             sprintf("Resolved frame %s: <%s> → /%s", $semantic->id, $semantic->tag, $pdfTag)
         );
-        return TaggingDecision::tagged($semantic, $pdfTag);
+        return TaggingDecision::tagged($semantic, $pdfTag, $frameId);
     }
     
     /**
@@ -174,7 +175,7 @@ class TaggingManager
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 "No semantic element or parent for frame {$frameId} → Artifact"
             );
-            return TaggingDecision::artifact('No semantic element (e.g., TCPDF footer)');
+            return TaggingDecision::artifact('No semantic element (e.g., TCPDF footer)', $frameId);
         }
         
         // Parent found → Inherit
@@ -183,7 +184,7 @@ class TaggingManager
             sprintf("Frame %s inherits from parent <%s> /%s (frame %s)", 
                 $frameId, $parent->tag, $pdfTag, $parent->id)
         );
-        return TaggingDecision::inherit($parent, $pdfTag);
+        return TaggingDecision::inherit($parent, $pdfTag, 'Inherit from parent', $frameId);
     }
     
     /**
@@ -202,7 +203,7 @@ class TaggingManager
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
                 sprintf("Could not resolve #text parent for %s → Artifact", $textNode->id)
             );
-            return TaggingDecision::artifact('Could not resolve #text parent');
+            return TaggingDecision::artifact('Could not resolve #text parent', $textNode->id);
         }
         
         // Parent found → Tag with parent's tag
@@ -210,6 +211,6 @@ class TaggingManager
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
             sprintf("Using parent <%s> for #text node → /%s", $parent->tag, $pdfTag)
         );
-        return TaggingDecision::tagged($parent, $pdfTag);
+        return TaggingDecision::tagged($parent, $pdfTag, $textNode->id);
     }
 }

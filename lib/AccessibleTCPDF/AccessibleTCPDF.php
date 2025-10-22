@@ -1259,13 +1259,7 @@ class AccessibleTCPDF extends TCPDF
         // ====================================================================
         // PHASE 2: BDC LIFECYCLE - Determine WHEN to open/close BDC
         // ====================================================================
-        $bdcAction = $this->bdcManager->determineBDCAction(
-            currentFrameId: $currentFrameId ?? '',
-            targetElement: $decision->element,
-            isTransparent: $decision->isTransparent,
-            isArtifact: $decision->isArtifact,
-            isLineBreak: $decision->isLineBreak
-        );
+        $bdcAction = $this->bdcManager->determineBDCAction($decision);
         
         // ====================================================================
         // PHASE 3: EXECUTION - Apply the BDC action

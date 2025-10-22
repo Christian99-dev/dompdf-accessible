@@ -248,20 +248,18 @@ class BDCStateManager
      * 4. Artifact status (should we close and wrap)
      * 5. Line-break status (should we continue parent's BDC)
      * 
-     * @param string $currentFrameId Current frame ID from renderer
-     * @param SemanticNode|null $targetElement Resolved target element (after transparency resolution)
-     * @param bool $isTransparent Is this a transparent inline tag?
-     * @param bool $isArtifact Is this artifact content?
-     * @param bool $isLineBreak Is this a line-break frame continuing parent?
+     * @param TaggingDecision $decision Tagging decision from TaggingManager
      * @return BDCAction Action to take
      */
-    public function determineBDCAction(
-        string $currentFrameId,
-        ?SemanticNode $targetElement,
-        bool $isTransparent,
-        bool $isArtifact,
-        bool $isLineBreak = false
-    ): BDCAction {
+    public function determineBDCAction(TaggingDecision $decision): BDCAction
+    {
+        // Extract data from decision
+        $currentFrameId = $decision->frameId ?? 'UNKNOWN';
+        $targetElement = $decision->element;
+        $isTransparent = $decision->isTransparent;
+        $isArtifact = $decision->isArtifact;
+        $isLineBreak = $decision->isLineBreak;
+        
         // LOGGING
         $targetId = $targetElement ? $targetElement->id : 'NULL';
         $activeBDC = $this->activeBDCFrame ? $this->activeBDCFrame['semanticId'] : 'NONE';
