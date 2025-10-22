@@ -8,7 +8,36 @@
 use Dompdf\SimpleLogger;
 use Dompdf\SemanticNode;
 
-require_once __DIR__ . '/BDCAction.php';
+/**
+ * BDC Action Decision
+ * 
+ * Represents the action to take for BDC lifecycle management.
+ * This decouples tagging decisions from BDC lifecycle decisions.
+ * 
+ * PHP 8.1 Enum - Ultra clean, no boilerplate needed.
+ * 
+ * @package dompdf-accessible
+ */
+enum BDCAction
+{
+    /**
+     * Open a new BDC block (closing previous if needed)
+     * Used when transitioning to a new structural element
+     */
+    case OPEN_NEW;
+    
+    /**
+     * Continue in current BDC block without changes
+     * Used for transparent inline tags that inherit parent's BDC
+     */
+    case CONTINUE;
+    
+    /**
+     * Close current BDC and wrap content as Artifact
+     * Used for non-semantic content (headers, footers, decorations)
+     */
+    case CLOSE_AND_ARTIFACT;
+}
 
 /**
  * BDC State Manager - Manages BDC/EMC lifecycle and nesting
@@ -267,14 +296,14 @@ class BDCStateManager
         
         // CASE 1: Artifact content → Close BDC and wrap as Artifact
         if ($isArtifact) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ closeAndArtifact");
-            return BDCAction::closeAndArtifact();
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ CLOSE_AND_ARTIFACT");
+            return BDCAction::CLOSE_AND_ARTIFACT;
         }
         
         // CASE 2: Transparent tag → Continue in parent's BDC (no new BDC)
         if ($isTransparent) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ continue (transparent)");
-            return BDCAction::continue('Transparent inline tag inherits parent BDC');
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ CONTINUE (transparent)");
+            return BDCAction::CONTINUE;
         }
         
         // CASE 3: Line-break frame → Continue in parent's BDC (multi-line text)
@@ -283,31 +312,31 @@ class BDCStateManager
         if ($isLineBreak && $targetElement !== null) {
             // Verify parent BDC is still active and matches
             if ($this->activeBDCFrame && $this->activeBDCFrame['semanticId'] === $targetElement->id) {
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ continue (line-break)");
-                return BDCAction::continue('Line-break frame continues parent BDC');
+                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ CONTINUE (line-break)");
+                return BDCAction::CONTINUE;
             }
             
             // Parent BDC not active → need to open new BDC
             // This can happen if BDC was closed prematurely
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ openNew (line-break, parent BDC closed)");
-            return BDCAction::openNew();
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ OPEN_NEW (line-break, parent BDC closed)");
+            return BDCAction::OPEN_NEW;
         }
         
         // CASE 4: No target element → Continue (NULL semantic, inherits context)
         if ($targetElement === null) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ continue (NULL)");
-            return BDCAction::continue('NULL semantic inherits parent BDC');
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ CONTINUE (NULL)");
+            return BDCAction::CONTINUE;
         }
         
         // CASE 5: Check if new BDC needed based on target element ID
         // Use target element's ID (not currentFrameId!) for BDC transition check
         if ($this->shouldOpenNewBDC($targetElement->id)) {
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ openNew");
-            return BDCAction::openNew();
+            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ OPEN_NEW");
+            return BDCAction::OPEN_NEW;
         }
         
         // CASE 6: Same element → Continue in current BDC
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ continue (same element)");
-        return BDCAction::continue('Same element, continue current BDC');
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ CONTINUE (same element)");
+        return BDCAction::CONTINUE;
     }
 }

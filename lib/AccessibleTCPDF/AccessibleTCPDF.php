@@ -12,7 +12,6 @@ use Dompdf\SemanticTree;
 require_once __DIR__ . '/tcpdf/tcpdf.php';
 
 // Load Accessibility Managers
-require_once __DIR__ . '/BDCAction.php';
 require_once __DIR__ . '/BDCStateManager.php';
 require_once __DIR__ . '/TaggingManager.php';
 require_once __DIR__ . '/ContentWrapperManager.php';
@@ -1264,37 +1263,43 @@ class AccessibleTCPDF extends TCPDF
         // ====================================================================
         // PHASE 3: EXECUTION - Apply the BDC action
         // ====================================================================
-        $result = '';
-        
-        if ($bdcAction->isOpenNew()) {
-            // ACTION: Open new BDC block (close previous if exists)
-            $mcid = $this->mcidCounter++;
-            $result = $this->bdcManager->closePreviousAndOpenNew(
-                $decision->pdfTag, 
-                $mcid, 
-                $decision->element->id
-            );
+        $result = match ($bdcAction) {
+            BDCAction::OPEN_NEW => (function() use ($decision) {
+                // ACTION: Open new BDC block (close previous if exists)
+                $mcid = $this->mcidCounter++;
+                $pdfOperators = $this->bdcManager->closePreviousAndOpenNew(
+                    $decision->pdfTag, 
+                    $mcid, 
+                    $decision->element->id
+                );
+                
+                // Track in structure tree
+                // Note: Transparent inline tags are already filtered out in registration
+                $this->structureTree[] = [
+                    'type' => 'content',
+                    'tag' => $decision->pdfTag,
+                    'mcid' => $mcid,
+                    'page' => $this->page,
+                    'semantic' => $decision->element
+                ];
+                
+                return $pdfOperators;
+            })(),
             
-            // Track in structure tree
-            // Note: Transparent inline tags are already filtered out in registration
-            $this->structureTree[] = [
-                'type' => 'content',
-                'tag' => $decision->pdfTag,
-                'mcid' => $mcid,
-                'page' => $this->page,
-                'semantic' => $decision->element
-            ];
+            BDCAction::CONTINUE => (function() {
+                // ACTION: Continue in current BDC (no changes)
+                // Transparent tags, NULL semantics, and same-element content all continue
+                // No PDF operators needed - just return empty string
+                return '';
+            })(),
             
-        } elseif ($bdcAction->isContinue()) {
-            // ACTION: Continue in current BDC (no changes)
-            // Transparent tags, NULL semantics, and same-element content all continue
-            // No PDF operators needed - just return styled content
-            
-        } elseif ($bdcAction->isCloseAndArtifact()) {
-            // ACTION: Close BDC and wrap as Artifact
-            $result = $this->bdcManager->closeBDC();
-            $cellCode = $this->contentWrapper->wrapAsArtifact($cellCode);
-        }
+            BDCAction::CLOSE_AND_ARTIFACT => (function() use (&$cellCode) {
+                // ACTION: Close BDC and wrap as Artifact
+                $closeOperator = $this->bdcManager->closeBDC();
+                $cellCode = $this->contentWrapper->wrapAsArtifact($cellCode);
+                return $closeOperator;
+            })(),
+        };
         
         // ====================================================================
         // FONT INJECTION - Always inject font operator into BT...ET blocks
