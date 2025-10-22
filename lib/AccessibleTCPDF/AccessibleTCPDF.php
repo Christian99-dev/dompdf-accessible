@@ -13,7 +13,6 @@ require_once __DIR__ . '/tcpdf/tcpdf.php';
 
 // Load Accessibility Managers
 require_once __DIR__ . '/BDCStateManager.php';
-require_once __DIR__ . '/TaggingManager.php';
 require_once __DIR__ . '/ContentWrapperManager.php';
 require_once __DIR__ . '/DrawingManager.php';
 require_once __DIR__ . '../../../src/SemanticTree.php';
@@ -1204,25 +1203,22 @@ class AccessibleTCPDF extends TCPDF
     }
     
     /**
-     * Override getCellCode() to add PDF/UA tagging via One-Phase Architecture
+     * Override getCellCode() to add PDF/UA tagging via Unified Architecture
      * 
-     * ARCHITECTURE: Simplified single-phase processing
-     * ==============================================
+     * ARCHITECTURE: Single Manager, Single Call
+     * ==========================================
      * 
-     * PHASE 1: TAGGING RESOLUTION (TaggingManager)
-     *   - Determines WHAT should be tagged
-     *   - Resolves transparent tags to their parents
-     *   - Identifies artifacts vs. semantic content
+     * BDCStateManager handles EVERYTHING:
+     * - Semantic resolution (Frame ID → SemanticNode)
+     * - Tagging decision (Artifact, Tagged, Transparent)
+     * - BDC lifecycle (when to open/close)
+     * - PDF operator generation (BDC/EMC/Artifact)
      * 
-     * PHASE 2: EXECUTION (BDCStateManager::processDecision)
-     *   - Combines lifecycle + execution in single method
-     *   - Returns PDF operators directly
-     *   - Handles all BDC state transitions internally
-     * 
-     * This simplified approach eliminates the intermediate BDCAction enum:
-     * - No more determineBDCAction() method
-     * - No more match expression for action handling
-     * - Direct TaggingDecision → PDF code transformation
+     * This eliminates all architectural complexity:
+     * - No TaggingManager (merged into BDCStateManager)
+     * - No BDCAction enum (direct PDF code output)
+     * - No match expression (handled internally)
+     * - Single method call: processFrame()
      * 
      * @param float $w Cell width
      * @param float $h Cell height
@@ -1240,20 +1236,16 @@ class AccessibleTCPDF extends TCPDF
             return $cellCode;
         }
         
-        // LOGGING: Track line-wrap issue
+        // LOGGING: Track rendering
         $currentFrameId = $this->currentFrameId;
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "frameId={$currentFrameId}, txt=" . substr($txt, 0, 50));
         
         // ====================================================================
-        // PHASE 1: TAGGING RESOLUTION - Determine WHAT to tag
+        // UNIFIED API: Single call handles everything
         // ====================================================================
-        $decision = TaggingManager::resolveTagging($this->semanticTree, $currentFrameId);
-        
-        // ====================================================================
-        // PHASE 2: EXECUTION - Process decision and get PDF operators
-        // ====================================================================
-        $result = $this->bdcManager->processDecision(
-            $decision,
+        $result = $this->bdcManager->processFrame(
+            $this->semanticTree,
+            $currentFrameId,
             $this->mcidCounter,
             $this->structureTree,
             $this->page
