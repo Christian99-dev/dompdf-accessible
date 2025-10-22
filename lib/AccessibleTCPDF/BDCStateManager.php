@@ -6,7 +6,6 @@
  */
 
 use Dompdf\SimpleLogger;
-use Dompdf\SemanticNode;
 
 /**
  * BDC Action Decision
@@ -93,7 +92,7 @@ class BDCStateManager
      * @param string $semanticId The semantic element ID (Frame ID)
      * @return bool True if new BDC should be opened
      */
-    public function shouldOpenNewBDC(string $semanticId): bool
+    private function shouldOpenNewBDC(string $semanticId): bool
     {
         // No active BDC → need to open new one
         if ($this->activeBDCFrame === null) {
@@ -124,16 +123,6 @@ class BDCStateManager
     }
     
     /**
-     * Get current nesting depth
-     * 
-     * @return int Current depth (0 = outside all BDC blocks)
-     */
-    public function getDepth(): int
-    {
-        return $this->bdcDepth;
-    }
-    
-    /**
      * Get active BDC frame info
      * 
      * @return array|null ['semanticId', 'pdfTag', 'mcid'] or null if no active BDC
@@ -153,7 +142,7 @@ class BDCStateManager
      * @param string $semanticId Semantic element ID for frame tracking
      * @return string PDF code to output (BDC operator)
      */
-    public function openBDC(string $pdfTag, int $mcid, string $semanticId): string
+    private function openBDC(string $pdfTag, int $mcid, string $semanticId): string
     {
         // Store active BDC state
         $this->activeBDCFrame = [
@@ -230,37 +219,6 @@ class BDCStateManager
         $pdfCode .= $this->openBDC($pdfTag, $mcid, $semanticId);
         
         return $pdfCode;
-    }
-    
-    /**
-     * Force close all open BDC blocks
-     * 
-     * Used in emergency situations (e.g., page end, document close)
-     * where we need to ensure all tags are properly closed.
-     * 
-     * @return string PDF code with EMC operators
-     */
-    public function forceCloseAll(): string
-    {
-        $pdfCode = '';
-        
-        // Close all nested BDC blocks
-        while ($this->bdcDepth > 0) {
-            $pdfCode .= $this->closeBDC();
-        }
-        
-        return $pdfCode;
-    }
-    
-    /**
-     * Reset state (for testing or emergency recovery)
-     */
-    public function reset(): void
-    {
-        $this->activeBDCFrame = null;
-        $this->bdcDepth = 0;
-        
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "State reset");
     }
     
     /**
