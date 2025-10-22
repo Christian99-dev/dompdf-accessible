@@ -8,37 +8,6 @@
 use Dompdf\SimpleLogger;
 
 /**
- * BDC Action Decision
- * 
- * Represents the action to take for BDC lifecycle management.
- * This decouples tagging decisions from BDC lifecycle decisions.
- * 
- * PHP 8.1 Enum - Ultra clean, no boilerplate needed.
- * 
- * @package dompdf-accessible
- */
-enum BDCAction
-{
-    /**
-     * Open a new BDC block (closing previous if needed)
-     * Used when transitioning to a new structural element
-     */
-    case OPEN_NEW;
-    
-    /**
-     * Continue in current BDC block without changes
-     * Used for transparent inline tags that inherit parent's BDC
-     */
-    case CONTINUE;
-    
-    /**
-     * Close current BDC and wrap content as Artifact
-     * Used for non-semantic content (headers, footers, decorations)
-     */
-    case CLOSE_AND_ARTIFACT;
-}
-
-/**
  * BDC State Manager - Manages BDC/EMC lifecycle and nesting
  * 
  * This class encapsulates ALL state management for PDF Tagged Content:
@@ -222,24 +191,26 @@ class BDCStateManager
     }
     
     /**
-     * Determine BDC Action based on current state and target element
+     * Process tagging decision and return PDF operators (1-PHASE ARCHITECTURE)
      * 
-     * This is the CORE of the two-phase architecture:
-     * - PHASE 1: Tagging Manager determines WHAT to tag (semantic resolution)
-     * - PHASE 2: BDC Manager determines WHEN to open/close BDC (lifecycle)
+     * This method replaces the 2-phase approach:
+     * - OLD: determineBDCAction() → match expression in getCellCode()
+     * - NEW: processDecision() → Direct PDF code output
      * 
-     * This method bridges the two phases by considering:
-     * 1. Current BDC state (what's open now)
-     * 2. Target element (what should be open)
-     * 3. Transparency (should we skip BDC entirely)
-     * 4. Artifact status (should we close and wrap)
-     * 5. Line-break status (should we continue parent's BDC)
+     * Analyzes TaggingDecision and returns appropriate PDF operators based on current state.
      * 
      * @param TaggingDecision $decision Tagging decision from TaggingManager
-     * @return BDCAction Action to take
+     * @param int &$mcidCounter MCID counter (passed by reference, incremented when opening BDC)
+     * @param array &$structureTree Structure tree (passed by reference, updated when opening BDC)
+     * @param int $page Current page number
+     * @return array ['pdfCode' => string, 'wrapAsArtifact' => bool] PDF operators to prepend
      */
-    public function determineBDCAction(TaggingDecision $decision): BDCAction
-    {
+    public function processDecision(
+        TaggingDecision $decision,
+        int &$mcidCounter,
+        array &$structureTree,
+        int $page
+    ): array {
         // Extract data from decision
         $currentFrameId = $decision->frameId ?? 'UNKNOWN';
         $targetElement = $decision->element;
@@ -250,51 +221,99 @@ class BDCStateManager
         // LOGGING
         $targetId = $targetElement ? $targetElement->id : 'NULL';
         $activeBDC = $this->activeBDCFrame ? $this->activeBDCFrame['semanticId'] : 'NONE';
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "frameId={$currentFrameId}, targetId={$targetId}, activeBDC={$activeBDC}, isArtifact={$isArtifact}, isTransparent={$isTransparent}, isLineBreak={$isLineBreak}");
+        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+            "frameId={$currentFrameId}, targetId={$targetId}, activeBDC={$activeBDC}, " .
+            "isArtifact={$isArtifact}, isTransparent={$isTransparent}, isLineBreak={$isLineBreak}"
+        );
         
-        // CASE 1: Artifact content → Close BDC and wrap as Artifact
+        // ====================================================================
+        // CASE 1: Artifact content → Close BDC and signal artifact wrapping
+        // ====================================================================
         if ($isArtifact) {
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ CLOSE_AND_ARTIFACT");
-            return BDCAction::CLOSE_AND_ARTIFACT;
+            return [
+                'pdfCode' => $this->closeBDC(),
+                'wrapAsArtifact' => true
+            ];
         }
         
+        // ====================================================================
         // CASE 2: Transparent tag → Continue in parent's BDC (no new BDC)
+        // ====================================================================
         if ($isTransparent) {
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ CONTINUE (transparent)");
-            return BDCAction::CONTINUE;
+            return [
+                'pdfCode' => '',
+                'wrapAsArtifact' => false
+            ];
         }
         
+        // ====================================================================
         // CASE 3: Line-break frame → Continue in parent's BDC (multi-line text)
-        // Line-break frames are created during reflow and have no semantic element,
-        // but should continue the parent element's BDC block.
+        // ====================================================================
         if ($isLineBreak && $targetElement !== null) {
             // Verify parent BDC is still active and matches
             if ($this->activeBDCFrame && $this->activeBDCFrame['semanticId'] === $targetElement->id) {
                 SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ CONTINUE (line-break)");
-                return BDCAction::CONTINUE;
+                return [
+                    'pdfCode' => '',
+                    'wrapAsArtifact' => false
+                ];
             }
             
-            // Parent BDC not active → need to open new BDC
-            // This can happen if BDC was closed prematurely
+            // Parent BDC not active → need to open new BDC (fallthrough to CASE 5)
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ OPEN_NEW (line-break, parent BDC closed)");
-            return BDCAction::OPEN_NEW;
         }
         
+        // ====================================================================
         // CASE 4: No target element → Continue (NULL semantic, inherits context)
+        // ====================================================================
         if ($targetElement === null) {
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ CONTINUE (NULL)");
-            return BDCAction::CONTINUE;
+            return [
+                'pdfCode' => '',
+                'wrapAsArtifact' => false
+            ];
         }
         
+        // ====================================================================
         // CASE 5: Check if new BDC needed based on target element ID
-        // Use target element's ID (not currentFrameId!) for BDC transition check
+        // ====================================================================
         if ($this->shouldOpenNewBDC($targetElement->id)) {
             SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ OPEN_NEW");
-            return BDCAction::OPEN_NEW;
+            
+            // Allocate new MCID
+            $mcid = $mcidCounter++;
+            
+            // Generate PDF operators (close previous, open new)
+            $pdfOperators = $this->closePreviousAndOpenNew(
+                $decision->pdfTag,
+                $mcid,
+                $targetElement->id
+            );
+            
+            // Register in structure tree
+            $structureTree[] = [
+                'type' => 'content',
+                'tag' => $decision->pdfTag,
+                'mcid' => $mcid,
+                'page' => $page,
+                'semantic' => $targetElement
+            ];
+            
+            return [
+                'pdfCode' => $pdfOperators,
+                'wrapAsArtifact' => false
+            ];
         }
         
+        // ====================================================================
         // CASE 6: Same element → Continue in current BDC
+        // ====================================================================
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "→ CONTINUE (same element)");
-        return BDCAction::CONTINUE;
+        return [
+            'pdfCode' => '',
+            'wrapAsArtifact' => false
+        ];
     }
 }

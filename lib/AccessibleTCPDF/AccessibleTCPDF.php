@@ -1204,31 +1204,25 @@ class AccessibleTCPDF extends TCPDF
     }
     
     /**
-     * Override getCellCode() to add PDF/UA tagging via Two-Phase Architecture
+     * Override getCellCode() to add PDF/UA tagging via One-Phase Architecture
      * 
-     * ARCHITECTURE: Complete separation of concerns
-     * ============================================
+     * ARCHITECTURE: Simplified single-phase processing
+     * ==============================================
      * 
      * PHASE 1: TAGGING RESOLUTION (TaggingManager)
      *   - Determines WHAT should be tagged
      *   - Resolves transparent tags to their parents
      *   - Identifies artifacts vs. semantic content
      * 
-     * PHASE 2: BDC LIFECYCLE MANAGEMENT (BDCStateManager)
-     *   - Determines WHEN to open/close BDC blocks
-     *   - Independent of tagging decisions
-     *   - Handles transparent tags by continuing current BDC
+     * PHASE 2: EXECUTION (BDCStateManager::processDecision)
+     *   - Combines lifecycle + execution in single method
+     *   - Returns PDF operators directly
+     *   - Handles all BDC state transitions internally
      * 
-     * PHASE 3: EXECUTION
-     *   - Applies the BDC action
-     *   - Wraps content appropriately
-     *   - Injects font operators
-     * 
-     * This two-phase approach solves the transparent tag problem:
-     * - Transparent tags DON'T get early returns
-     * - They participate in full BDC lifecycle
-     * - BDC Manager decides to CONTINUE (not OPEN NEW)
-     * - Sequential processing invariant maintained ✓
+     * This simplified approach eliminates the intermediate BDCAction enum:
+     * - No more determineBDCAction() method
+     * - No more match expression for action handling
+     * - Direct TaggingDecision → PDF code transformation
      * 
      * @param float $w Cell width
      * @param float $h Cell height
@@ -1251,55 +1245,24 @@ class AccessibleTCPDF extends TCPDF
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "frameId={$currentFrameId}, txt=" . substr($txt, 0, 50));
         
         // ====================================================================
-        // PHASE 1: TAGGING RESOLUTION - Determine WHAT to tag (SIMPLIFIED)
+        // PHASE 1: TAGGING RESOLUTION - Determine WHAT to tag
         // ====================================================================
         $decision = TaggingManager::resolveTagging($this->semanticTree, $currentFrameId);
         
         // ====================================================================
-        // PHASE 2: BDC LIFECYCLE - Determine WHEN to open/close BDC
+        // PHASE 2: EXECUTION - Process decision and get PDF operators
         // ====================================================================
-        $bdcAction = $this->bdcManager->determineBDCAction($decision);
+        $result = $this->bdcManager->processDecision(
+            $decision,
+            $this->mcidCounter,
+            $this->structureTree,
+            $this->page
+        );
         
-        // ====================================================================
-        // PHASE 3: EXECUTION - Apply the BDC action
-        // ====================================================================
-        $result = match ($bdcAction) {
-            BDCAction::OPEN_NEW => (function() use ($decision) {
-                // ACTION: Open new BDC block (close previous if exists)
-                $mcid = $this->mcidCounter++;
-                $pdfOperators = $this->bdcManager->closePreviousAndOpenNew(
-                    $decision->pdfTag, 
-                    $mcid, 
-                    $decision->element->id
-                );
-                
-                // Track in structure tree
-                // Note: Transparent inline tags are already filtered out in registration
-                $this->structureTree[] = [
-                    'type' => 'content',
-                    'tag' => $decision->pdfTag,
-                    'mcid' => $mcid,
-                    'page' => $this->page,
-                    'semantic' => $decision->element
-                ];
-                
-                return $pdfOperators;
-            })(),
-            
-            BDCAction::CONTINUE => (function() {
-                // ACTION: Continue in current BDC (no changes)
-                // Transparent tags, NULL semantics, and same-element content all continue
-                // No PDF operators needed - just return empty string
-                return '';
-            })(),
-            
-            BDCAction::CLOSE_AND_ARTIFACT => (function() use (&$cellCode) {
-                // ACTION: Close BDC and wrap as Artifact
-                $closeOperator = $this->bdcManager->closeBDC();
-                $cellCode = $this->contentWrapper->wrapAsArtifact($cellCode);
-                return $closeOperator;
-            })(),
-        };
+        // Apply artifact wrapping if needed
+        if ($result['wrapAsArtifact']) {
+            $cellCode = $this->contentWrapper->wrapAsArtifact($cellCode);
+        }
         
         // ====================================================================
         // FONT INJECTION - Always inject font operator into BT...ET blocks
@@ -1312,7 +1275,7 @@ class AccessibleTCPDF extends TCPDF
             );
         }
         
-        return $result . $cellCode;
+        return $result['pdfCode'] . $cellCode;
     }
 
     // ========================================================================
