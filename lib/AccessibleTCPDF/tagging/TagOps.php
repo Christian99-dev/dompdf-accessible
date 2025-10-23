@@ -61,7 +61,7 @@ class TagOps
      */
     public static function emc(): string
     {
-        return "EMC\n";
+        return "\nEMC\n";
     }
     
     /**
