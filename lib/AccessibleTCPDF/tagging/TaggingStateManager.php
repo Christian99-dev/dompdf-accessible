@@ -26,7 +26,7 @@
 use Dompdf\SimpleLogger;
 
 require_once __DIR__ . '/TagOps.php';
-require_once __DIR__ . '/../../../../src/Helpers.php';
+require_once __DIR__ . '/../../../src/SimpleLogger.php';
 
 class TaggingStateManager
 {
