@@ -754,6 +754,25 @@ class AccessibleTCPDF extends TCPDF
         return $oid;
     }
 
+    /**
+     * Override setFontSize to suppress font operations in PDF/UA mode
+     * 
+     * CRITICAL: We inject Tf (font selection) directly in getCellCode() BT...ET blocks.
+     * All standalone font operations outside BDC create unnecessary Artifact blocks.
+     * 
+     * SOLUTION: Suppress ALL font output in PDF/UA mode.
+     * Parent calculations still happen (font properties set in memory).
+     * Actual Tf output happens in getCellCode() where we inject it into BT...ET.
+     * 
+     * @param float $size The font size in points
+     * @param boolean $out if true output the font size command
+     * @public
+     */
+    public function setFontSize($size, $out=true) {
+        // In PDF/UA mode: suppress ALL font output (we inject Tf in getCellCode instead)
+        parent::setFontSize($size, $this->pdfua ? false : $out);
+    }
+
     /** ==================================== */
     /** ==== STATE DEPENDENT INJECTIONS ==== */
     /** ==================================== */
@@ -931,6 +950,22 @@ class AccessibleTCPDF extends TCPDF
         if ($this->pdfua !== true) {
             return $cellCode;
         }
+
+        // *************************************************************************
+        // FONT OP. INJECTION - Always inject font operator into BT...ET blocks
+        //
+        // This is very dirty, but dompdf, tcpdf creates many BT...ET blocks with tcpdf->setFontSize() on top of the page. 
+        // So we suppress them in pdf/ua mode (ref. further up in setFontSize()) 
+        // and inject Tf directly here. since getCellCode is for all text oprations
+        if (isset($this->CurrentFont['i']) && $this->FontSizePt) {
+            // Inject /F1 12 Tf after every BT command
+            $cellCode = preg_replace(
+                '/\bBT\s+/',
+                sprintf('BT /F%d %F Tf ', $this->CurrentFont['i'], $this->FontSizePt),
+                $cellCode
+            );
+        }
+        // *************************************************************************
         
         // Use TextProcessor to handle tagging
         return $this->textProcessor->process(
