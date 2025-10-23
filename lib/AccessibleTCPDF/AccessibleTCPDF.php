@@ -14,7 +14,15 @@ require_once __DIR__ . '/tcpdf/tcpdf.php';
 // Load Accessibility Managers
 require_once __DIR__ . '/BDCStateManager.php';
 require_once __DIR__ . '/DrawingManager.php';
-require_once __DIR__ . '/TagOps.php';
+
+// new tagging system
+require_once __DIR__ . '/tagging/TagOps.php';
+require_once __DIR__ . '/tagging/TaggingStateManager.php';
+require_once __DIR__ . '/tagging/ContentProcessor.php';
+require_once __DIR__ . '/tagging/TextProcessor.php';
+require_once __DIR__ . '/tagging/DrawingProcessor.php';
+
+// SemanticTree for node access
 require_once __DIR__ . '../../../src/SemanticTree.php';
 
 /**
@@ -40,6 +48,24 @@ class AccessibleTCPDF extends TCPDF
      * @var DrawingManager
      */
     private DrawingManager $drawingManager;
+    
+    /**
+     * Tagging State Manager - Tracks semantic and artifact BDC state
+     * @var TaggingStateManager
+     */
+    private TaggingStateManager $taggingStateManager;
+    
+    /**
+     * Text Processor - Handles text rendering with PDF/UA tagging
+     * @var TextProcessor
+     */
+    private TextProcessor $textProcessor;
+    
+    /**
+     * Drawing Processor - Handles drawing operations with PDF/UA tagging
+     * @var DrawingProcessor
+     */
+    private DrawingProcessor $drawingProcessor;
     
 
     // ========================================================================
@@ -169,6 +195,15 @@ class AccessibleTCPDF extends TCPDF
         
         // Drawing Manager - Needs semantic tree
         $this->drawingManager = new DrawingManager($this->semanticTree);
+        
+        // Tagging State Manager - No dependencies
+        $this->taggingStateManager = new TaggingStateManager();
+        
+        // Text Processor - No dependencies (receives state via process())
+        $this->textProcessor = new TextProcessor();
+        
+        // Drawing Processor - No dependencies (receives state via process())
+        $this->drawingProcessor = new DrawingProcessor();
     }
 
     /**
@@ -187,6 +222,36 @@ class AccessibleTCPDF extends TCPDF
     // ========================================================================
     // UTILS
     // ========================================================================
+
+    /**
+     * Capture PDF output from a parent method call
+     * 
+     * TCPDF methods output directly to buffer via _out().
+     * This helper captures that output by saving current buffer state,
+     * executing the callback, then extracting the new content.
+     * 
+     * @param callable $callback Function that outputs to PDF buffer
+     * @return string The captured PDF operators
+     */
+    private function captureParentOutput(callable $callback): string
+    {
+        // Save current page buffer length
+        $beforeLength = isset($this->pages[$this->page]) ? strlen($this->pages[$this->page]) : 0;
+        
+        // Execute the callback (outputs to buffer)
+        $callback();
+        
+        // Extract what was added to buffer
+        $afterLength = isset($this->pages[$this->page]) ? strlen($this->pages[$this->page]) : 0;
+        $captured = substr($this->pages[$this->page], $beforeLength, $afterLength - $beforeLength);
+        
+        // Remove the captured content from buffer (we'll re-add it with tagging)
+        if (isset($this->pages[$this->page])) {
+            $this->pages[$this->page] = substr($this->pages[$this->page], 0, $beforeLength);
+        }
+        
+        return $captured;
+    }
 
     /**
      * Build the structure tree from collected semantic elements
@@ -1084,135 +1149,135 @@ class AccessibleTCPDF extends TCPDF
     /** ==== STATE DEPENDENT INJECTIONS ==== */
     /** ==================================== */
 
-    /**
-     * Override setExtGState to wrap ExtGState operations as Artifacts
-     */
-    protected function setExtGState($gs) {
-        // SUPPRESS ExtGState when inside tagged content blocks
-        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-            return;
-        }
+    // /**
+    //  * Override setExtGState to wrap ExtGState operations as Artifacts
+    //  */
+    // protected function setExtGState($gs) {
+    //     // SUPPRESS ExtGState when inside tagged content blocks
+    //     if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
+    //         return;
+    //     }
         
-        // Only wrap if PDF/UA mode AND we're OUTSIDE tagged content blocks
-        if ($this->pdfua && $this->page > 0 && $this->state == 2) {
-            $this->_out('/Artifact BMC');
-            parent::setExtGState($gs);
-            $this->_out("\nEMC");
-        } else {
-            parent::setExtGState($gs);
-        }
-    }
+    //     // Only wrap if PDF/UA mode AND we're OUTSIDE tagged content blocks
+    //     if ($this->pdfua && $this->page > 0 && $this->state == 2) {
+    //         $this->_out('/Artifact BMC');
+    //         parent::setExtGState($gs);
+    //         $this->_out("\nEMC");
+    //     } else {
+    //         parent::setExtGState($gs);
+    //     }
+    // }
     
-    /**
-     * Override StartTransform to prevent untagged 'q' operator
-     */
-    public function StartTransform() {
-        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
-        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-            // Track transform matrix but don't output 'q'
-            if ($this->state != 2) {
-                return;
-            }
-            if ($this->inxobj) {
-                $this->xobjects[$this->xobjid]['transfmrk'][] = strlen($this->xobjects[$this->xobjid]['outdata']);
-            } else {
-                $this->transfmrk[$this->page][] = $this->pagelen[$this->page];
-            }
-            ++$this->transfmatrix_key;
-            $this->transfmatrix[$this->transfmatrix_key] = array();
-            return;
-        }
+    // /**
+    //  * Override StartTransform to prevent untagged 'q' operator
+    //  */
+    // public function StartTransform() {
+    //     // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
+    //     if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
+    //         // Track transform matrix but don't output 'q'
+    //         if ($this->state != 2) {
+    //             return;
+    //         }
+    //         if ($this->inxobj) {
+    //             $this->xobjects[$this->xobjid]['transfmrk'][] = strlen($this->xobjects[$this->xobjid]['outdata']);
+    //         } else {
+    //             $this->transfmrk[$this->page][] = $this->pagelen[$this->page];
+    //         }
+    //         ++$this->transfmatrix_key;
+    //         $this->transfmatrix[$this->transfmatrix_key] = array();
+    //         return;
+    //     }
         
-        parent::StartTransform();
-    }
+    //     parent::StartTransform();
+    // }
     
-    /**
-     * Override StopTransform to prevent untagged 'Q' operator
-     */
-    public function StopTransform() {
-        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
-        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-            // Restore transform matrix but don't output 'Q'
-            if ($this->state != 2) {
-                return;
-            }
-            if (isset($this->transfmatrix[$this->transfmatrix_key])) {
-                array_pop($this->transfmatrix[$this->transfmatrix_key]);
-                --$this->transfmatrix_key;
-                if (isset($this->transfmrk[$this->page]) AND isset($this->transfmrk[$this->page][$this->transfmatrix_key])) {
-                    $this->transfmrk[$this->page][$this->transfmatrix_key] = strlen($this->pages[$this->page]);
-                } elseif ($this->inxobj) {
-                    if (isset($this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key])) {
-                        $this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key] = strlen($this->xobjects[$this->xobjid]['outdata']);
-                    }
-                }
-            }
-            return;
-        }
+    // /**
+    //  * Override StopTransform to prevent untagged 'Q' operator
+    //  */
+    // public function StopTransform() {
+    //     // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
+    //     if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
+    //         // Restore transform matrix but don't output 'Q'
+    //         if ($this->state != 2) {
+    //             return;
+    //         }
+    //         if (isset($this->transfmatrix[$this->transfmatrix_key])) {
+    //             array_pop($this->transfmatrix[$this->transfmatrix_key]);
+    //             --$this->transfmatrix_key;
+    //             if (isset($this->transfmrk[$this->page]) AND isset($this->transfmrk[$this->page][$this->transfmatrix_key])) {
+    //                 $this->transfmrk[$this->page][$this->transfmatrix_key] = strlen($this->pages[$this->page]);
+    //             } elseif ($this->inxobj) {
+    //                 if (isset($this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key])) {
+    //                     $this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key] = strlen($this->xobjects[$this->xobjid]['outdata']);
+    //                 }
+    //             }
+    //         }
+    //         return;
+    //     }
         
-        parent::StopTransform();
-    }
+    //     parent::StopTransform();
+    // }
     
-    /**
-     * Override _outSaveGraphicsState to prevent untagged 'q' operator
-     * 
-     * @protected
-     */
-    protected function _outSaveGraphicsState() {
-        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
-        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-            return; // Suppress 'q' output
-        }
+    // /**
+    //  * Override _outSaveGraphicsState to prevent untagged 'q' operator
+    //  * 
+    //  * @protected
+    //  */
+    // protected function _outSaveGraphicsState() {
+    //     // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
+    //     if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
+    //         return; // Suppress 'q' output
+    //     }
         
-        parent::_outSaveGraphicsState();
-    }
+    //     parent::_outSaveGraphicsState();
+    // }
     
-    /**
-     * Override _outRestoreGraphicsState to prevent untagged 'Q' operator
-     * 
-     * @protected
-     */
-    protected function _outRestoreGraphicsState() {
-        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
-        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-            return; // Suppress 'Q' output
-        }
+    // /**
+    //  * Override _outRestoreGraphicsState to prevent untagged 'Q' operator
+    //  * 
+    //  * @protected
+    //  */
+    // protected function _outRestoreGraphicsState() {
+    //     // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
+    //     if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
+    //         return; // Suppress 'Q' output
+    //     }
         
-        parent::_outRestoreGraphicsState();
-    }
+    //     parent::_outRestoreGraphicsState();
+    // }
 
-    /**
-     * Override _putresources() to output structure tree objects BEFORE catalog
-     * This ensures xref table is correctly built
-     */
-    protected function _putresources()
-    {
-        // CRITICAL: Close any open BDC block before finalizing the document
-        if ($this->pdfua && $this->bdcManager->getActiveBDCFrame() !== null) {
-            // Inject EMC into the current page buffer
-            if ($this->state == 2 && isset($this->page)) {
-                $this->setPageBuffer($this->page, $this->bdcManager->closeBDC(), true);
-            }
-        }
+    // /**
+    //  * Override _putresources() to output structure tree objects BEFORE catalog
+    //  * This ensures xref table is correctly built
+    //  */
+    // protected function _putresources()
+    // {
+    //     // CRITICAL: Close any open BDC block before finalizing the document
+    //     if ($this->pdfua && $this->bdcManager->getActiveBDCFrame() !== null) {
+    //         // Inject EMC into the current page buffer
+    //         if ($this->state == 2 && isset($this->page)) {
+    //             $this->setPageBuffer($this->page, $this->bdcManager->closeBDC(), true);
+    //         }
+    //     }
         
-        // Call parent first to output all standard resources
-        parent::_putresources();
+    //     // Call parent first to output all standard resources
+    //     parent::_putresources();
         
-        // Now output our structure tree objects (if PDF/UA mode is enabled)
-        if ($this->pdfua && !empty($this->structureTree)) {
-            // Save page_obj_id now that _putpages() has been called
-            if (property_exists($this, 'page_obj_id') && isset($this->page_obj_id) && is_array($this->page_obj_id)) {
-                $this->savedPageObjIds = $this->page_obj_id;
+    //     // Now output our structure tree objects (if PDF/UA mode is enabled)
+    //     if ($this->pdfua && !empty($this->structureTree)) {
+    //         // Save page_obj_id now that _putpages() has been called
+    //         if (property_exists($this, 'page_obj_id') && isset($this->page_obj_id) && is_array($this->page_obj_id)) {
+    //             $this->savedPageObjIds = $this->page_obj_id;
                 
-                // BUILD structure tree
-                $structureTreeData = $this->_createStructureTree();
-                if ($structureTreeData !== null) {
-                    // Save struct tree root ID for catalog modification
-                    $this->savedStructTreeRootObjId = $structureTreeData['struct_tree_root_obj_id'];
-                }
-            }
-        }
-    }
+    //             // BUILD structure tree
+    //             $structureTreeData = $this->_createStructureTree();
+    //             if ($structureTreeData !== null) {
+    //                 // Save struct tree root ID for catalog modification
+    //                 $this->savedStructTreeRootObjId = $structureTreeData['struct_tree_root_obj_id'];
+    //             }
+    //         }
+    //     }
+    // }
     
     /** ================================ */
     /** ==== TEXT / DRAW OPERATIONS ==== */
@@ -1250,55 +1315,134 @@ class AccessibleTCPDF extends TCPDF
         if ($this->pdfua !== true) {
             return $cellCode;
         }
+        
+        // Use TextProcessor to handle tagging
+        $output = $this->textProcessor->process(
+            $this->currentFrameId,
+            $this->taggingStateManager,
+            $this->semanticTree,
+            fn() => $cellCode
+        );
+        
+        // Output the processed code
+        $this->_out($output);
+        
+        // Return empty string since we already output
+        return '';
     }
 
     /**
      * Override Line() using universal drawing pattern
      */
     public function Line($x1, $y1, $x2, $y2, $style=array()) {
-        parent::Line($x1, $y1, $x2, $y2, $style);
+        // If not PDF/UA mode, call parent directly
         if ($this->pdfua !== true) {
+            parent::Line($x1, $y1, $x2, $y2, $style);
             return;
         }
+        
+        // Use DrawingProcessor to handle tagging
+        $output = $this->drawingProcessor->process(
+            $this->currentFrameId,
+            $this->taggingStateManager,
+            $this->semanticTree,
+            fn() => $this->captureParentOutput(
+                fn() => parent::Line($x1, $y1, $x2, $y2, $style)
+            )
+        );
+        
+        $this->_out($output);
     }
 
     /**
      * Override Rect() using universal drawing pattern
      */
     public function Rect($x, $y, $w, $h, $style='', $border_style=array(), $fill_color=array()) {
+        // If not PDF/UA mode, call parent directly
         if ($this->pdfua !== true) {
+            parent::Rect($x, $y, $w, $h, $style, $border_style, $fill_color);
             return;
         }
-        parent::Rect($x, $y, $w, $h, $style, $border_style, $fill_color);
+        
+        // Use DrawingProcessor to handle tagging
+        $output = $this->drawingProcessor->process(
+            $this->currentFrameId,
+            $this->taggingStateManager,
+            $this->semanticTree,
+            fn() => $this->captureParentOutput(
+                fn() => parent::Rect($x, $y, $w, $h, $style, $border_style, $fill_color)
+            )
+        );
+        
+        $this->_out($output);
     }
 
     /**
      * Override Circle() using universal drawing pattern
      */
     public function Circle($x0, $y0, $r, $angstr=0, $angend=360, $style='', $line_style=array(), $fill_color=array(), $nc=2) {
+        // If not PDF/UA mode, call parent directly
         if ($this->pdfua !== true) {
+            parent::Circle($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc);
             return;
         }
-        parent::Circle($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc);
+        
+        // Use DrawingProcessor to handle tagging
+        $output = $this->drawingProcessor->process(
+            $this->currentFrameId,
+            $this->taggingStateManager,
+            $this->semanticTree,
+            fn() => $this->captureParentOutput(
+                fn() => parent::Circle($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc)
+            )
+        );
+        
+        $this->_out($output);
     }
 
     /**
      * Override Ellipse() using universal drawing pattern
      */
     public function Ellipse($x0, $y0, $rx, $ry=0, $angle=0, $astart=0, $afinish=360, $style='', $line_style=array(), $fill_color=array(), $nc=2) {
+        // If not PDF/UA mode, call parent directly
         if ($this->pdfua !== true) {
+            parent::Ellipse($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc);
             return;
         }
-        parent::Ellipse($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc);
+        
+        // Use DrawingProcessor to handle tagging
+        $output = $this->drawingProcessor->process(
+            $this->currentFrameId,
+            $this->taggingStateManager,
+            $this->semanticTree,
+            fn() => $this->captureParentOutput(
+                fn() => parent::Ellipse($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc)
+            )
+        );
+        
+        $this->_out($output);
     }
 
     /**
      * Override Polygon() using universal drawing pattern
      */
     public function Polygon($p, $style='', $line_style=array(), $fill_color=array(), $closed=true) {
+        // If not PDF/UA mode, call parent directly
         if ($this->pdfua !== true) {
+            parent::Polygon($p, $style, $line_style, $fill_color, $closed);
             return;
         }
-        parent::Polygon($p, $style, $line_style, $fill_color, $closed);
+        
+        // Use DrawingProcessor to handle tagging
+        $output = $this->drawingProcessor->process(
+            $this->currentFrameId,
+            $this->taggingStateManager,
+            $this->semanticTree,
+            fn() => $this->captureParentOutput(
+                fn() => parent::Polygon($p, $style, $line_style, $fill_color, $closed)
+            )
+        );
+        
+        $this->_out($output);
     }
 }

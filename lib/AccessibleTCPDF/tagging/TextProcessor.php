@@ -1,6 +1,9 @@
 <?php
 /**
- * TextProcessor - Processes text rendering with PDF/UA tagging
+ * TextProrequire_once __DIR__ . '/ContentProcessor.php';
+require_once __DIR__ . '/TextDecision.php';
+require_once __DIR__ . '/TagOps.php';
+require_once __DIR__ . '/TaggingStateManager.php';sor - Processes text rendering with PDF/UA tagging
  * 
  * Handles the complete text rendering lifecycle:
  * 1. Analyze: Determine if we need to open new BDC, continue, or wrap as artifact
@@ -20,7 +23,7 @@ use Dompdf\SemanticTree;
 
 require_once __DIR__ . '/ContentProcessor.php';
 require_once __DIR__ . '/TextDecision.php';
-require_once __DIR__ . '/../TagOps.php';
+require_once __DIR__ . '/TagOps.php';
 
 class TextProcessor implements ContentProcessor
 {

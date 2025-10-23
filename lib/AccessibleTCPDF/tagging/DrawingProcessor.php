@@ -20,7 +20,7 @@ use Dompdf\SemanticTree;
 
 require_once __DIR__ . '/ContentProcessor.php';
 require_once __DIR__ . '/DrawingDecision.php';
-require_once __DIR__ . '/../TagOps.php';
+require_once __DIR__ . '/TagOps.php';
 
 class DrawingProcessor implements ContentProcessor
 {
