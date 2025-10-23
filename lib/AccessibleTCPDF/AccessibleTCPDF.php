@@ -1242,8 +1242,7 @@ class AccessibleTCPDF extends TCPDF
      * @param ... (all other TCPDF Cell parameters)
      * @return string PDF code with BDC/EMC tagging
      */
-    protected function getCellCode($w, $h=0, $txt='', $border=0, $ln=0, $align='', $fill=false, $link='', $stretch=0, $ignore_min_height=false, $calign='T', $valign='M')
-    {
+    protected function getCellCode($w, $h=0, $txt='', $border=0, $ln=0, $align='', $fill=false, $link='', $stretch=0, $ignore_min_height=false, $calign='T', $valign='M') {
         // Get original cell code from parent TCPDF
         $cellCode = parent::getCellCode($w, $h, $txt, $border, $ln, $align, $fill, $link, $stretch, $ignore_min_height, $calign, $valign);    
         
@@ -1251,84 +1250,55 @@ class AccessibleTCPDF extends TCPDF
         if ($this->pdfua !== true) {
             return $cellCode;
         }
-        
-        // LOGGING: Track rendering
-        $currentFrameId = $this->currentFrameId;
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "frameId={$currentFrameId}, txt=" . substr($txt, 0, 50));
-        
-        // ====================================================================
-        // UNIFIED API: Single call handles everything
-        // ====================================================================
-        $result = $this->bdcManager->processFrame(
-            $this->semanticTree,
-            $currentFrameId,
-            $this->mcidCounter,
-            $this->structureTree,
-            $this->page
-        );
-        
-        // Apply artifact wrapping if needed (inline - trivial string concat)
-        if ($result['wrapAsArtifact']) {
-            $cellCode = "/Artifact BMC\n" . $cellCode . "\nEMC\n";
-        }
-        
-        // ====================================================================
-        // FONT INJECTION - Always inject font operator into BT...ET blocks
-        // ====================================================================
-        if (isset($this->CurrentFont['i']) && $this->FontSizePt) {
-            // Inject /F1 12 Tf after every BT command
-            $cellCode = preg_replace(
-                '/\bBT\s+/',
-                sprintf('BT /F%d %F Tf ', $this->CurrentFont['i'], $this->FontSizePt),
-                $cellCode
-            );
-        }
-        
-        return $result['pdfCode'] . $cellCode;
     }
 
     /**
      * Override Line() using universal drawing pattern
      */
     public function Line($x1, $y1, $x2, $y2, $style=array()) {
-        $this->_executeDrawingOperation("Line", function() use ($x1, $y1, $x2, $y2, $style) {
-            parent::Line($x1, $y1, $x2, $y2, $style);
-        });
+        parent::Line($x1, $y1, $x2, $y2, $style);
+        if ($this->pdfua !== true) {
+            return;
+        }
     }
 
     /**
      * Override Rect() using universal drawing pattern
      */
     public function Rect($x, $y, $w, $h, $style='', $border_style=array(), $fill_color=array()) {
-        $this->_executeDrawingOperation("Rect", function() use ($x, $y, $w, $h, $style, $border_style, $fill_color) {
-            parent::Rect($x, $y, $w, $h, $style, $border_style, $fill_color);
-        });
+        if ($this->pdfua !== true) {
+            return;
+        }
+        parent::Rect($x, $y, $w, $h, $style, $border_style, $fill_color);
     }
 
     /**
      * Override Circle() using universal drawing pattern
      */
     public function Circle($x0, $y0, $r, $angstr=0, $angend=360, $style='', $line_style=array(), $fill_color=array(), $nc=2) {
-        $this->_executeDrawingOperation("Circle", function() use ($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc) {
-            parent::Circle($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc);
-        });
+        if ($this->pdfua !== true) {
+            return;
+        }
+        parent::Circle($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc);
     }
 
     /**
      * Override Ellipse() using universal drawing pattern
      */
     public function Ellipse($x0, $y0, $rx, $ry=0, $angle=0, $astart=0, $afinish=360, $style='', $line_style=array(), $fill_color=array(), $nc=2) {
-        $this->_executeDrawingOperation("Ellipse", function() use ($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc) {
-            parent::Ellipse($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc);
-        });
+        if ($this->pdfua !== true) {
+            return;
+        }
+        parent::Ellipse($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc);
     }
 
     /**
      * Override Polygon() using universal drawing pattern
      */
     public function Polygon($p, $style='', $line_style=array(), $fill_color=array(), $closed=true) {
-        $this->_executeDrawingOperation("Polygon", function() use ($p, $style, $line_style, $fill_color, $closed) {
-            parent::Polygon($p, $style, $line_style, $fill_color, $closed);
-        });
+        if ($this->pdfua !== true) {
+            return;
+        }
+        parent::Polygon($p, $style, $line_style, $fill_color, $closed);
     }
 }
