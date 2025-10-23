@@ -827,33 +827,33 @@ class AccessibleTCPDF extends TCPDF
         parent::StopTransform();
     }
     
-    // /**
-    //  * Override _outSaveGraphicsState to prevent untagged 'q' operator
-    //  * 
-    //  * @protected
-    //  */
-    // protected function _outSaveGraphicsState() {
-    //     // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
-    //     if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-    //         return; // Suppress 'q' output
-    //     }
+    /**
+     * Override _outSaveGraphicsState to prevent untagged 'q' operator
+     * 
+     * @protected
+     */
+    protected function _outSaveGraphicsState() {
+        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
+        if ($this->pdfua && $this->taggingStateManager->hasAnyTaggingState()) {
+            return; // Suppress 'q' output
+        }
         
-    //     parent::_outSaveGraphicsState();
-    // }
+        parent::_outSaveGraphicsState();
+    }
     
     // /**
     //  * Override _outRestoreGraphicsState to prevent untagged 'Q' operator
     //  * 
     //  * @protected
     //  */
-    // protected function _outRestoreGraphicsState() {
-    //     // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
-    //     if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-    //         return; // Suppress 'Q' output
-    //     }
+    protected function _outRestoreGraphicsState() {
+        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
+        if ($this->pdfua && $this->taggingStateManager->hasAnyTaggingState()) {
+            return; // Suppress 'Q' output
+        }
         
-    //     parent::_outRestoreGraphicsState();
-    // }
+        parent::_outRestoreGraphicsState();
+    }
 
     /**
      * Override _putresources() to output structure tree objects BEFORE catalog
