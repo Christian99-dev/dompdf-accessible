@@ -35,21 +35,8 @@ require_once __DIR__ . '../../../src/SemanticTree.php';
 class AccessibleTCPDF extends TCPDF
 {   
     // ========================================================================
-    // MANAGER INSTANCES
+    // MANAGER / PROCESSOR / BUILDER INSTANCES 
     // ========================================================================
-    
-    /**
-     * BDC State Manager - Handles BDC/EMC lifecycle and semantic resolution
-     * @var BDCStateManager
-     */
-    private BDCStateManager $bdcManager;
-
-    /**
-     * Drawing Manager - Static helper for drawing decisions
-     * @var DrawingManager
-     */
-    private DrawingManager $drawingManager;
-    
     /**
      * Tagging State Manager - Tracks semantic and artifact BDC state
      * @var TaggingStateManager
@@ -90,12 +77,6 @@ class AccessibleTCPDF extends TCPDF
      * @var string|null
      */
     private ?string $currentFrameId = null;
-    
-    /**
-     * Current MCID (Marked Content ID) counter
-     * @var int
-     */
-    private int $mcidCounter = 0;
 
     /**
      * PDF/UA mode enabled
@@ -294,49 +275,6 @@ class AccessibleTCPDF extends TCPDF
         }
         
         return $captured;
-    }
-
-    /**
-     * Execute a drawing operation with PDF/UA compliance
-     * 
-     * This method uses DrawingManager for decision logic and wraps drawing operations accordingly.
-     * 
-     * @param string $operationName Name for logging (Line, Rect, etc.)
-     * @param callable $drawingCallback The actual drawing operation
-     * @return void
-     * @protected
-     */
-    private function _executeDrawingOperation(string $operationName, callable $drawingCallback): void
-    {
-        // Non-PDF/UA mode or not on page → Draw directly
-        if (!$this->pdfua || $this->page <= 0 || $this->state != 2) {
-            $drawingCallback();
-            return;
-        }
-        
-        // Get decision from DrawingManager (no array parameter needed!)
-        $context = $this->drawingManager->analyzeDrawingContext(
-            $operationName, 
-            $this->currentFrameId,  // Pass frameId, not node!
-            $this->bdcManager->isInsideTaggedContent(),
-            $this->bdcManager->getActiveBDCFrame()
-        );
-        
-        // Close BDC if needed (for decorative elements that should end semantic tagging)
-        if ($context['should_close_bdc']) {
-            $this->_out($this->bdcManager->closeBDC());
-        }
-        
-        // Execute drawing operation
-        if ($context['wrap_as_artifact']) {
-            // Get Artifact wrapper operators from DrawingManager
-            $operators = $this->drawingManager->getArtifactWrapOperators($this->bdcManager->getActiveBDCFrame());
-            $this->_out($operators['before']);
-            $drawingCallback();
-            $this->_out($operators['after']);
-        } else {
-            $drawingCallback();
-        }
     }
 
     // ========================================================================
