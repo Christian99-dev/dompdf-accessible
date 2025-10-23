@@ -919,8 +919,8 @@ class AccessibleTCPDF extends TCPDF
      */
     protected function _endpage() {
         // PDF/UA FIX: Close any open BDC block BEFORE wrapping page-end graphics
-        if ($this->pdfua && $this->bdcManager->getActiveBDCFrame() !== null && $this->page > 0 && $this->state == 2) {
-            $this->_out("\n" . $this->bdcManager->closeBDC());
+        if ($this->pdfua && $this->taggingStateManager->hasAnyTaggingState() !== null && $this->page > 0 && $this->state == 2) {
+            $this->_out("\n" . $this->taggingStateManager->closeCurrentTag());
         }
         
         // PDF/UA FIX: Wrap any remaining page content as Artifact

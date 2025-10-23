@@ -22,6 +22,9 @@
  * @link    https://github.com/dompdf/dompdf
  * @license http://www.gnu.org/copyleft/lesser.html GNU Lesser General Public License
  */
+
+require_once __DIR__ . '/TagOps.php';
+
 class TaggingStateManager
 {
     /**
@@ -166,6 +169,35 @@ class TaggingStateManager
     public function hasAnyTaggingState(): bool
     {
         return $this->hasSemanticState() || $this->hasArtifactState();
+    }
+    
+    /**
+     * Close all open tagging states and return EMC operators
+     * 
+     * CRITICAL: Called at end of page to ensure no unclosed BDC blocks.
+     * Must close in correct order and return all EMC operators as string.
+     * 
+     * Use case: _endpage() needs to close any open BDC before wrapping final content as Artifact
+     * 
+     * @return string EMC operators (can be empty string if nothing open)
+     */
+    public function closeCurrentTag(): string
+    {
+        $output = '';
+        
+        // Close semantic state if open
+        if ($this->hasSemanticState()) {
+            $output .= TagOps::emc();
+            $this->closeSemanticBDC();
+        }
+        
+        // Close artifact state if open
+        if ($this->hasArtifactState()) {
+            $output .= TagOps::artifactClose();
+            $this->closeArtifactBDC();
+        }
+        
+        return $output;
     }
     
     // ========================================================================
