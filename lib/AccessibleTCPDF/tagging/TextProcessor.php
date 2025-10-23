@@ -1,6 +1,6 @@
 <?php
 /**
- * TextProrequire_once __DIR__ . '/ContentProcessor.php';
+ * TextProcessor - Processes text rendering with PDF/UA tagging
  * 
  * Handles the complete text rendering lifecycle:
  * 1. Analyze: Determine if we need to open new BDC, continue, or wrap as artifact
@@ -17,10 +17,14 @@
  */
 
 use Dompdf\SemanticTree;
+use Dompdf\SimpleLogger;
 
 require_once __DIR__ . '/ContentProcessor.php';
 require_once __DIR__ . '/TextDecision.php';
 require_once __DIR__ . '/TagOps.php';
+require_once __DIR__ . '/TaggingStateManager.php';
+require_once __DIR__ . '/../../../../src/Helpers.php';
+require_once __DIR__ . '/ContentProcessor.php';
 
 class TextProcessor implements ContentProcessor
 {
@@ -60,8 +64,15 @@ class TextProcessor implements ContentProcessor
         TaggingStateManager $stateManager,
         SemanticTree $semanticTree
     ): TextDecision {
+        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+            sprintf("Analyzing: frameId=%s, hasSemanticState=%s, activeFrameId=%s", 
+                $frameId ?? 'null',
+                $stateManager->hasSemanticState() ? 'true' : 'false',
+                $stateManager->getActiveSemanticFrameId() ?? 'null'));
+        
         // No frame ID → Artifact
         if ($frameId === null) {
+            SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, "Decision: ARTIFACT (no frameId)");
             return TextDecision::ARTIFACT;
         }
         
@@ -70,16 +81,22 @@ class TextProcessor implements ContentProcessor
         
         // Node not found → Artifact
         if ($node === null) {
+            SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+                sprintf("Decision: ARTIFACT (node not found for frameId=%s)", $frameId));
             return TextDecision::ARTIFACT;
         }
         
         // Same frame as active? → Continue (Transparent)
         $activeFrameId = $stateManager->getActiveSemanticFrameId();
         if ($activeFrameId === $frameId) {
+            SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, "Decision: CONTINUE (same frameId)");
             return TextDecision::CONTINUE;
         }
         
         // Different frame → Open new semantic BDC
+        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+            sprintf("Decision: OPEN_NEW (different frameId, was=%s, now=%s)", 
+                $activeFrameId ?? 'null', $frameId));
         return TextDecision::OPEN_NEW;
     }
     
@@ -105,6 +122,9 @@ class TextProcessor implements ContentProcessor
         SemanticTree $semanticTree,
         callable $contentRenderer
     ): string {
+        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+            sprintf("Executing: decision=%s, frameId=%s", $decision->name, $frameId ?? 'null'));
+        
         $output = '';
         
         switch ($decision) {
@@ -115,6 +135,8 @@ class TextProcessor implements ContentProcessor
                 
                 // Close existing BDC if open
                 if ($stateManager->hasSemanticState()) {
+                    SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+                        "Closing previous Semantic BDC before opening new one");
                     $output .= TagOps::emc();
                     $stateManager->closeSemanticBDC();
                 }
@@ -124,19 +146,29 @@ class TextProcessor implements ContentProcessor
                 $output .= TagOps::bdcOpen($pdfTag, $mcid);
                 $stateManager->openSemanticBDC($frameId);
                 
+                SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+                    sprintf("Opened new Semantic BDC: tag=%s, mcid=%d, frameId=%s", 
+                        $pdfTag, $mcid, $frameId));
+                
                 // Render content
                 $output .= $contentRenderer();
                 
                 // Keep BDC open for next call (important!)
+                SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+                    "Content rendered, keeping BDC open");
                 break;
                 
             case TextDecision::CONTINUE:
                 // Just render (BDC already open)
+                SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+                    "Continuing in existing BDC");
                 $output .= $contentRenderer();
                 break;
                 
             case TextDecision::ARTIFACT:
                 // Wrap as artifact
+                SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+                    "Wrapping as Artifact");
                 $output .= TagOps::artifactOpen();
                 $stateManager->openArtifactBDC();
                 
@@ -146,6 +178,9 @@ class TextProcessor implements ContentProcessor
                 $stateManager->closeArtifactBDC();
                 break;
         }
+        
+        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+            sprintf("Execution complete, output length=%d", strlen($output)));
         
         return $output;
     }
