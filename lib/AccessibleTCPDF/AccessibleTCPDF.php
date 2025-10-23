@@ -650,11 +650,13 @@ class AccessibleTCPDF extends TCPDF
         // ===============================================================================================
         // === tcpdf->_putcatalog() PATCH 2/2: Add StructTreeRoot, MarkInfo, and Lang ====================
         // ===============================================================================================
-        $structTreeRootObjId = $this->structureTreeBuilder->getStructureObjId();
+        if ($this->pdfua) {
+            $structTreeRootObjId = $this->structureTreeBuilder->getStructureObjId();
+            if(!$this->structureTreeBuilder->isEmpty() && $structTreeRootObjId !== null) {
+                $out .= ' /StructTreeRoot ' . $structTreeRootObjId . ' 0 R';
+                $out .= ' /MarkInfo << /Marked true >>';
+            }
         
-        if ($this->pdfua && !$this->structureTreeBuilder->isEmpty() && $structTreeRootObjId !== null) {
-            $out .= ' /StructTreeRoot ' . $structTreeRootObjId . ' 0 R';
-            $out .= ' /MarkInfo << /Marked true >>';
             $out .= ' /Lang '.$this->_textstring('en-US', $oid);  // PDF/UA requires language
         } 
         // === ELSE: TCPDF's standard language handling ===
