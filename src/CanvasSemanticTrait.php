@@ -36,10 +36,12 @@ trait CanvasSemanticTrait
     protected ?SemanticTree $_semantic_tree = null;
         
     /**
-     * Set current frame ID in tree (just passes frameId to PDF backend)
+     * Set current frame ID in tree (resolves to semantic parent)
      *
      * This is called during rendering to track which node is being processed.
-     * The tree itself doesn't store "current" - that's TCPDF's responsibility.
+     * 
+     * CRITICAL: For #text nodes and other non-semantic elements, we find the
+     * semantic parent (P, Div, H1, etc.) using findContentContainerParent().
      * 
      * @param string|null $frameId The frame ID being rendered (null = clear)
      */
@@ -50,9 +52,23 @@ trait CanvasSemanticTrait
             return;
         }
         
-        // Just tunnel to PDF backend - tree doesn't need to know "current"!
+        // If frameId is null, just clear
+        if ($frameId === null) {
+            if (method_exists($this->_pdf, 'setCurrentFrameId')) {
+                $this->_pdf->setCurrentFrameId(null);
+            }
+            return;
+        }
+        
+        // Find the semantic content container parent
+        $semanticParent = $this->_semantic_tree->findContentContainerParent($frameId);
+        
+        // Use the parent's ID if found, otherwise use original frameId
+        $semanticFrameId = $semanticParent ? $semanticParent->id : $frameId;
+        
+        // Tunnel to PDF backend
         if (method_exists($this->_pdf, 'setCurrentFrameId')) {
-            $this->_pdf->setCurrentFrameId($frameId);
+            $this->_pdf->setCurrentFrameId($semanticFrameId);
         }
     }
 
