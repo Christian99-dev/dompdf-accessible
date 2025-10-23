@@ -11,10 +11,6 @@ use Dompdf\SemanticTree;
 
 require_once __DIR__ . '/tcpdf/tcpdf.php';
 
-// Load Accessibility Managers
-require_once __DIR__ . '/BDCStateManager.php';
-require_once __DIR__ . '/DrawingManager.php';
-
 // new tagging system
 require_once __DIR__ . '/tagging/TagOps.php';
 require_once __DIR__ . '/tagging/TaggingStateManager.php';
@@ -178,12 +174,6 @@ class AccessibleTCPDF extends TCPDF
         
         // Store semantic tree reference
         $this->semanticTree = $semanticTree;
-        
-        // BDC State Manager - No dependencies
-        $this->bdcManager = new BDCStateManager();
-        
-        // Drawing Manager - Needs semantic tree
-        $this->drawingManager = new DrawingManager($this->semanticTree);
         
         // Tagging State Manager - No dependencies
         $this->taggingStateManager = new TaggingStateManager();
