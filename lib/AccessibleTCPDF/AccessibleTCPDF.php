@@ -761,21 +761,21 @@ class AccessibleTCPDF extends TCPDF
     // /**
     //  * Override setExtGState to wrap ExtGState operations as Artifacts
     //  */
-    // protected function setExtGState($gs) {
-    //     // SUPPRESS ExtGState when inside tagged content blocks
-    //     if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-    //         return;
-    //     }
-        
-    //     // Only wrap if PDF/UA mode AND we're OUTSIDE tagged content blocks
-    //     if ($this->pdfua && $this->page > 0 && $this->state == 2) {
-    //         $this->_out('/Artifact BMC');
-    //         parent::setExtGState($gs);
-    //         $this->_out("\nEMC");
-    //     } else {
-    //         parent::setExtGState($gs);
-    //     }
-    // }
+    protected function setExtGState($gs) {
+        // PDF/UA: Wrap ExtGState operations as Artifact if inside tagged content
+        if ($this->pdfua === false || $this->taggingStateManager->hasAnyTaggingState()) {
+            parent::setExtGState($gs);
+            return;
+        }
+
+        if ($this->page > 0 && $this->state == 2) {
+            $this->_out(TagOps::artifactOpen());
+            parent::setExtGState($gs);
+            $this->_out(TagOps::artifactClose());
+        } else {
+            parent::setExtGState($gs);
+        }
+    }
     
     // /**
     //  * Override StartTransform to prevent untagged 'q' operator
