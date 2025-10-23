@@ -23,7 +23,7 @@ require_once __DIR__ . '/ContentProcessor.php';
 require_once __DIR__ . '/DrawingDecision.php';
 require_once __DIR__ . '/TagOps.php';
 require_once __DIR__ . '/TaggingStateManager.php';
-require_once __DIR__ . '/../../../../src/Helpers.php';
+require_once __DIR__ . '/../../../src/SimpleLogger.php';
 
 class DrawingProcessor implements ContentProcessor
 {
