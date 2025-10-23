@@ -86,47 +86,45 @@ trait CanvasSemanticTrait
             "=== Starting registration ==="
         );
     
-        // Simplified recursive function - only register semantic containers
+        // Simplified recursive function - register ALL frames for complete tree
         $registerSemanticContainers = function(Frame $frame) use (&$registerSemanticContainers, &$registeredCount) {
             $node = $frame->get_node();
             $nodeName = $node->nodeName;
             
-            // SIMPLIFIED LOGIC: Only register semantic containers, skip text fragments and decorative elements
-            // Skip text fragments and purely decorative elements (#text, br, hr)
-            // Register all other elements as potential semantic containers (div, p, span, h1-h6, table, tr, td, th, ul, ol, li, etc.)
-            if (!in_array($nodeName, ['#text', 'br', 'hr'])) {
-                $attributes = [];
-                if ($node->hasAttributes()) {
-                    foreach ($node->attributes as $attr) {
-                        $attributes[$attr->name] = $attr->value;
-                    }
+            // REGISTER ALL FRAMES (including #text, br, hr, decorative elements)
+            // This ensures every Frame ID has a corresponding node in the tree
+            // Even if they're not semantic, they need to be in the tree for proper navigation
+            $attributes = [];
+            if ($node->hasAttributes()) {
+                foreach ($node->attributes as $attr) {
+                    $attributes[$attr->name] = $attr->value;
                 }
-                
-                $parent = $frame->get_parent();
-                $parentId = $parent ? $parent->get_id() : null;
-                
-                // Extract common data
-                $frameId = $frame->get_id();
-                $display = $frame->get_style()->display;
-                
-                // Direct tree access - no wrapper method!
-                $this->_semantic_tree->add(
-                    $frameId,       // Frame ID
-                    $nodeName,      // Tag name
-                    $attributes,    // Attributes
-                    $display,       // CSS display
-                    $parentId       // Parent frame ID (tree handles linking!)
-                );
-                
-                $registeredCount++;
-                
-                SimpleLogger::log("dompdf_logs", __METHOD__, 
-                    sprintf("DUAL: Registered to BOTH structures: %s <%s> (parent: %s)", 
-                        $frameId, $nodeName, $parentId ?? 'none')
-                );
             }
             
-            // Process all children regardless of whether we registered this frame
+            $parent = $frame->get_parent();
+            $parentId = $parent ? $parent->get_id() : null;
+            
+            // Extract common data
+            $frameId = $frame->get_id();
+            $display = $frame->get_style()->display;
+            
+            // Direct tree access - add ALL frames!
+            $this->_semantic_tree->add(
+                $frameId,       // Frame ID
+                $nodeName,      // Tag name
+                $attributes,    // Attributes
+                $display,       // CSS display
+                $parentId       // Parent frame ID (tree handles linking!)
+            );
+            
+            $registeredCount++;
+            
+            SimpleLogger::log("dompdf_logs", __METHOD__, 
+                sprintf("Registered: frameId=%s, tag=<%s>, parent=%s", 
+                    $frameId, $nodeName, $parentId ?? 'none')
+            );
+            
+            // Process all children
             foreach ($frame->get_children() as $child) {
                 $registerSemanticContainers($child);
             }
