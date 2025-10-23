@@ -21,6 +21,7 @@ require_once __DIR__ . '/tagging/TaggingStateManager.php';
 require_once __DIR__ . '/tagging/ContentProcessor.php';
 require_once __DIR__ . '/tagging/TextProcessor.php';
 require_once __DIR__ . '/tagging/DrawingProcessor.php';
+require_once __DIR__ . '/tagging/StructureTreeBuilder.php';
 
 // SemanticTree for node access
 require_once __DIR__ . '../../../src/SemanticTree.php';
@@ -66,7 +67,12 @@ class AccessibleTCPDF extends TCPDF
      * @var DrawingProcessor
      */
     private DrawingProcessor $drawingProcessor;
-    
+
+    /**
+     * Structure Tree Builder - Manages the PDF structure tree for accessibility
+     * @var StructureTreeBuilder
+     */
+    private StructureTreeBuilder $structureTreeBuilder;
 
     // ========================================================================
     // STATE MANAGEMENT
@@ -86,12 +92,6 @@ class AccessibleTCPDF extends TCPDF
     private ?string $currentFrameId = null;
     
     /**
-     * Structure tree elements
-     * @var array
-     */
-    private array $structureTree = [];
-    
-    /**
      * Current MCID (Marked Content ID) counter
      * @var int
      */
@@ -108,12 +108,6 @@ class AccessibleTCPDF extends TCPDF
      * @var array
      */
     private array $savedPageObjIds = [];
-
-    /**
-     * Saved StructTreeRoot object ID for catalog modification
-     * @var int|null
-     */
-    private ?int $savedStructTreeRootObjId = null;
 
     /**
      * Mapping of annotation object IDs to their details for StructTree
@@ -204,6 +198,9 @@ class AccessibleTCPDF extends TCPDF
         
         // Drawing Processor - No dependencies (receives state via process())
         $this->drawingProcessor = new DrawingProcessor();
+
+        // Structure Tree Builder
+        $this->structureTreeBuilder = new StructureTreeBuilder($this->semanticTree);
     }
 
     /**
@@ -251,388 +248,6 @@ class AccessibleTCPDF extends TCPDF
         }
         
         return $captured;
-    }
-
-    /**
-     * Build the structure tree from collected semantic elements
-     * Uses _newobj() to properly register objects in xref table
-     * 
-     * @return array|null Array with 'struct_tree_root_obj_id', or null if no structure
-     */
-    private function _createStructureTree(): ?array
-    {
-        if (empty($this->structureTree)) {
-            return null;
-        }
-        
-        // Group structure elements by page
-        $pageStructures = [];
-        foreach ($this->structureTree as $struct) {
-            $page = $struct['page'];
-            if (!isset($pageStructures[$page])) {
-                $pageStructures[$page] = [];
-            }
-            $pageStructures[$page][] = $struct;
-        }
-        
-        // ========================================================================
-        // PHASE 1: COLLECT ALL SEMANTIC ELEMENTS (including non-rendered containers)
-        // ========================================================================
-        
-        // Collect ALL semantic elements that need StructElems
-        // This includes rendered elements AND their container ancestors (table, tr, tbody)
-        $allSemanticElements = [];
-        
-        foreach ($this->structureTree as $struct) {
-            $semantic = $struct['semantic'];
-            
-            // NEW TREE APPROACH: O(n) ancestor collection via direct parent references!
-            $ancestors = [$semantic->id => $semantic];
-            foreach ($semantic->getAncestors() as $ancestor) {
-                $ancestors[$ancestor->id] = $ancestor;
-            }
-            
-            foreach ($ancestors as $frameId => $ancestor) {
-                if (!isset($allSemanticElements[$frameId])) {
-                    $allSemanticElements[$frameId] = $ancestor;
-                }
-            }
-        }
-        
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("Collected %d semantic elements (including containers)", count($allSemanticElements))
-        );
-        
-        // NEW: Pre-calculate ALL depths for O(1) sorting (MAJOR OPTIMIZATION!)
-        foreach ($allSemanticElements as $semantic) {
-            $semantic->getDepth();  // Cache depth in node
-        }
-        
-        // Sort by depth (root first, leaves last) AND element ID (parents before children)
-        // Now O(n log n) instead of O(n³)!
-        usort($allSemanticElements, function($a, $b) {
-            $depthCompare = $a->getDepth() <=> $b->getDepth();  // O(1) cached!
-            if ($depthCompare !== 0) {
-                return $depthCompare; // Different depths: sort by depth
-            }
-            // Same depth: sort by ID (lower ID = parent comes first)
-            return (int)$a->id <=> (int)$b->id;
-        });
-        
-        // ========================================================================
-        // PHASE 2: CALCULATE OBJECT IDs
-        // ========================================================================
-        
-        // We need to know all object IDs beforehand for /P references
-        // Calculate future object IDs (without actually allocating them yet)
-        $nextN = $this->n;  // Current object counter
-        
-        // Build Frame-ID-to-ObjID mapping
-        $frameIdToObjId = [];
-        foreach ($allSemanticElements as $semantic) {
-            $frameIdToObjId[$semantic->id] = ++$nextN;
-        }
-        
-        $numLinkStructElems = count($this->annotationObjects);
-        $calculatedLinkObjIds = [];
-        for ($i = 0; $i < $numLinkStructElems; $i++) {
-            $calculatedLinkObjIds[] = ++$nextN;
-        }
-        $parentTreeObjId = ++$nextN;
-        $documentObjId = ++$nextN;
-        $structTreeRootObjId = ++$nextN;
-        
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("Calculated ObjIDs: %d StructElems, Document=%d, StructTreeRoot=%d", 
-                count($allSemanticElements), $documentObjId, $structTreeRootObjId)
-        );
-        
-        // ========================================================================
-        // PHASE 3: OUTPUT StructElems (in depth order)
-        // ========================================================================
-        
-        // Now output objects in order
-        // Each _newobj() call will increment $this->n to match our calculated IDs
-        $structElemObjIds = [];
-        
-        // Build mapping: element ID → [MCID array, page] for elements that were actually rendered
-        $frameIdToMCIDs = [];  // Note: variable name kept for compatibility, but now uses element IDs
-        foreach ($this->structureTree as $struct) {
-            $elementId = $struct['semantic']->id;
-            if (!isset($frameIdToMCIDs[$elementId])) {
-                $frameIdToMCIDs[$elementId] = [
-                    'mcids' => [],
-                    'page' => $struct['page']
-                ];
-            }
-            $frameIdToMCIDs[$elementId]['mcids'][] = $struct['mcid'];
-        }
-        
-        // Track MCID → StructElem mapping for ParentTree
-        $mcidToObjId = [];
-        
-        // Track HTML ID → StructElem Object ID mapping (for TD Headers attribute)
-        $htmlIdToObjId = [];
-        
-        // Output ALL StructElems (including non-rendered containers)
-        foreach ($allSemanticElements as $semantic) {
-            // Allocate object ID NOW (immediately before output)
-            $objId = $this->_newobj();
-            $structElemObjIds[] = $objId;
-            
-            // Get PDF structure tag
-            $pdfTag = $semantic->getPdfStructureTag();
-            
-            // Track HTML id attribute for TH elements (for Headers references)
-            $htmlId = $semantic->getAttribute('id', null);
-            if ($htmlId !== null && $htmlId !== '' && $pdfTag === 'TH') {
-                $htmlIdToObjId[$htmlId] = $objId;
-            }
-            
-            // NEW TREE APPROACH: O(1) parent lookup via direct reference!
-            $parent = $semantic->getParent();
-            $parentObjId = $parent !== null && isset($frameIdToObjId[$parent->id])
-                ? $frameIdToObjId[$parent->id]
-                : $documentObjId;
-            
-            // Build StructElem object
-            $out = '<<';
-            $out .= ' /Type /StructElem';
-            $out .= ' /S /' . $pdfTag;
-            $out .= sprintf(' /P %d 0 R', $parentObjId);  // CORRECT parent from hierarchy!
-            
-            // Add /K (kids):
-            // - If element was rendered: MCIDs
-            // - If container (not rendered): child StructElems
-            if (isset($frameIdToMCIDs[$semantic->id])) {
-                // Element was rendered → has MCIDs
-                $mcids = $frameIdToMCIDs[$semantic->id]['mcids'];
-                $pageNum = $frameIdToMCIDs[$semantic->id]['page'];
-                
-                // Track MCID → StructElem mapping for ParentTree
-                foreach ($mcids as $mcid) {
-                    $mcidToObjId[$mcid] = $objId;
-                }
-                
-                // Add page reference - REQUIRED when /K is integer!
-                if (isset($this->savedPageObjIds[$pageNum])) {
-                    $out .= sprintf(' /Pg %d 0 R', $this->savedPageObjIds[$pageNum]);
-                }
-                
-                // Use simple integer MCID (or array if multiple)
-                if (count($mcids) === 1) {
-                    $out .= ' /K ' . $mcids[0];
-                } else {
-                    $out .= ' /K [' . implode(' ', $mcids) . ']';
-                }
-            } else {
-                // NEW TREE APPROACH: O(1) semantic children access!
-                $children = $semantic->getChildren();
-                
-                if (!empty($children)) {
-                    // Filter out children that don't have valid StructElem objIds (e.g., #text nodes)
-                    $childObjIds = array_filter(
-                        array_map(fn($child) => $frameIdToObjId[$child->id] ?? null, $children),
-                        fn($objId) => $objId !== null && $objId > 0
-                    );
-                    
-                    if (!empty($childObjIds)) {
-                        $out .= ' /K [' . implode(' 0 R ', $childObjIds) . ' 0 R]';
-                    }
-                }
-            }
-            
-            // Add alt text for images
-            if ($semantic->isImage() && $semantic->hasAltText()) {
-                $altText = TCPDF_STATIC::_escape($semantic->getAltText());
-                $out .= ' /Alt (' . $altText . ')';
-            }
-            
-            // Add TH Scope attribute in /A dictionary (PDF/UA Rule 81)
-            if ($pdfTag === 'TH') {
-                // Default scope: Column (most common for header cells)
-                // Could be enhanced to detect Row/Both scope from HTML attributes
-                $scope = 'Column';
-                $out .= ' /A << /O /Table /Scope /' . $scope . ' >>';
-                
-                // Add ID if present in HTML (for IDTree and Headers references)
-                $thId = $semantic->getAttribute('id', null);
-                if ($thId !== null && $thId !== '') {
-                    $out .= ' /ID (' . TCPDF_STATIC::_escape($thId) . ')';
-                }
-            }
-            
-            // Add TD Headers attribute in /A dictionary (PDF/UA Rule 10)
-            if ($pdfTag === 'TD') {
-                $headersAttr = $semantic->getAttribute('headers', null);
-                if ($headersAttr !== null && $headersAttr !== '') {
-                    // headers attribute can be space-separated list of HTML IDs (strings, not obj refs!)
-                    $headerIds = array_filter(array_map('trim', explode(' ', trim($headersAttr))));
-                    if (!empty($headerIds)) {
-                        // Headers should be ID strings that match TH /ID values
-                        $headerIdStrings = array_map(function($id) {
-                            return '(' . TCPDF_STATIC::_escape($id) . ')';
-                        }, $headerIds);
-                        $out .= ' /A << /O /Table /Headers [' . implode(' ', $headerIdStrings) . '] >>';
-                    }
-                }
-            }
-            
-            // Add RowSpan/ColSpan for table cells (PDF/UA table structure)
-            if ($pdfTag === 'TD' || $pdfTag === 'TH') {
-                // Check if cell has rowspan > 1
-                $rowspan = (int)$semantic->getAttribute('rowspan', '1');
-                if ($rowspan > 1) {
-                    $out .= ' /RowSpan ' . $rowspan;
-                }
-                
-                // Check if cell has colspan > 1
-                $colspan = (int)$semantic->getAttribute('colspan', '1');
-                if ($colspan > 1) {
-                    $out .= ' /ColSpan ' . $colspan;
-                }
-            }
-            
-            $out .= ' >>';
-            $out .= "\n".'endobj';
-            
-            // CRITICAL: _newobj() already outputs "N 0 obj"
-            // We just need to output the content and "endobj"
-            $this->_out($out);
-            
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                sprintf("StructElem %d: /%s (frame %d, parent obj %d)", 
-                    $objId, $pdfTag, $semantic->id, $parentObjId)
-            );
-        }
-        
-        // Create Link StructElems for annotations (PDF/UA 7.18.5 requirement)
-        $linkStructElemObjIds = [];
-        foreach ($this->annotationObjects as $annot) {
-            $linkObjId = $this->_newobj();
-            
-            // Build Link StructElem with OBJR (Object Reference) to annotation
-            $out = '<<';
-            $out .= ' /Type /StructElem';
-            $out .= ' /S /Link';
-            $out .= sprintf(' /P %d 0 R', $documentObjId);  // Parent is Document
-            $out .= sprintf(' /K << /Type /OBJR /Obj %d 0 R >>', $annot['obj_id']);  // Reference to annotation object
-            
-            // Add /Alt for accessibility (screenreaders)
-            $altText = !empty($annot['url']) ? 'Link to ' . $annot['url'] : $annot['text'];
-            $out .= ' /Alt (' . TCPDF_STATIC::_escape($altText) . ')';
-            
-            $out .= ' >>';
-            $out .= "\n".'endobj';
-            $this->_out($out);  // _newobj() already output "N 0 obj"
-            
-            $linkStructElemObjIds[] = $linkObjId;
-        }
-        
-        // Combine all StructElem IDs for Document's /K array
-        // IMPORTANT: Only include TOP-LEVEL elements (parent not in structure tree)
-        // Otherwise we get duplicate references (parent's /K already references children)
-        // NEW TREE APPROACH: O(1) parent access!
-        $topLevelObjIds = [];
-        foreach ($allSemanticElements as $semantic) {
-            $parent = $semantic->getParent();  // O(1) direct reference!
-            // Top-level = no parent OR parent not in our structure tree
-            if ($parent === null || !isset($frameIdToObjId[$parent->id])) {
-                $topLevelObjIds[] = $frameIdToObjId[$semantic->id];
-            }
-        }
-        
-        // Links are also top-level (parent is Document)
-        $topLevelObjIds = array_merge($topLevelObjIds, $linkStructElemObjIds);
-        
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-            sprintf("Document /K will reference %d top-level StructElems", count($topLevelObjIds))
-        );
-        
-        // Output ParentTree (allocate ID immediately before output)
-        $parentTreeObjId = $this->_newobj();
-        // CRITICAL ParentTree structure:
-        // - Page's /StructParents N maps to an ARRAY of StructElems for MCIDs
-        // - Annotation's /StructParent N maps to a SINGLE StructElem
-        // 
-        // Format: /Nums [ 
-        //   0 [10 0 R 11 0 R]   ← Index 0 = Page's MCIDs (array, ONE entry per MCID!)
-        //   1 15 0 R             ← Index 1 = First annotation (single ref)
-        //   2 16 0 R             ← Index 2 = Second annotation (single ref)
-        // ]
-        //
-        // CRITICAL: The array at index 0 must have ONE entry per MCID in order!
-        // mcidToObjId[0] = first StructElem, mcidToObjId[1] = second StructElem, etc.
-        $out = '<< /Nums [';
-        
-        // Index 1: Array of StructElems for page's MCIDs (Adobe ignores index 0)
-        // Build array in MCID order (0, 1, 2, ...)
-        $out .= ' 1 [';
-        if (!empty($mcidToObjId)) {
-            // Sort by MCID (key) to ensure correct order
-            ksort($mcidToObjId);
-            $mcidObjRefs = array_map(fn($objId) => $objId . ' 0 R', $mcidToObjId);
-            $out .= implode(' ', $mcidObjRefs);
-        }
-        $out .= ']';
-        
-        // Subsequent indices: One per annotation
-        foreach ($linkStructElemObjIds as $idx => $linkObjId) {
-            $annotIndex = $idx + 2;  // Start from 2 (1 is used by page)
-            $out .= sprintf(' %d %d 0 R', $annotIndex, $linkObjId);
-        }
-        
-        $out .= ' ] >>';
-        $out .= "\n".'endobj';
-        $this->_out($out);  // _newobj() already output "N 0 obj"
-        
-        // Output Document container element
-        // CRITICAL: Use calculated $documentObjId from earlier!
-        // Call _newobj() to allocate the next ID (which should match our calculation)
-        $actualDocumentObjId = $this->_newobj();
-        $out = '<<';
-        $out .= ' /Type /StructElem';
-        $out .= ' /S /Document';
-        // CRITICAL FIX: PDF/UA Rule 7.1 requires ALL StructElems have /P (Parent)
-        // Document's parent is the StructTreeRoot
-        $out .= sprintf(' /P %d 0 R', $structTreeRootObjId);
-        $out .= ' /K [' . implode(' 0 R ', $topLevelObjIds) . ' 0 R]';  // Only TOP-LEVEL elements!
-        $out .= ' >>';
-        $out .= "\n".'endobj';
-        $this->_out($out);  // _newobj() already output "N 0 obj"
-        
-        // Output StructTreeRoot
-        // CRITICAL: Use calculated $structTreeRootObjId from earlier!
-        $actualStructTreeRootObjId = $this->_newobj();
-        $out = '<<';
-        $out .= ' /Type /StructTreeRoot';
-        $out .= sprintf(' /K [%d 0 R]', $documentObjId);
-        $out .= sprintf(' /ParentTree %d 0 R', $parentTreeObjId);
-        $out .= ' /ParentTreeNextKey 3';  // 1=page, 2=first annotation, 3=next available
-        
-        // PDF/UA COMPLIANCE: RoleMap for non-standard structure types
-        // Strong, Em → Span (inline emphasis)
-        // Standard types (H1, P, Link, Div, etc.) must NOT be in RoleMap
-        $out .= ' /RoleMap << /Strong /Span /Em /Span >>';
-        
-        // Build IDTree for TH elements with id attributes (for TD Headers references)
-        if (!empty($htmlIdToObjId)) {
-            $idTreeEntries = [];
-            foreach ($htmlIdToObjId as $htmlId => $objId) {
-                $idTreeEntries[] = '(' . TCPDF_STATIC::_escape($htmlId) . ') ' . $objId . ' 0 R';
-            }
-            $out .= ' /IDTree << /Names [' . implode(' ', $idTreeEntries) . '] >>';
-        }
-        
-        $out .= ' >>';
-        $out .= "\n".'endobj';
-        $this->_out($out);  // _newobj() already output "N 0 obj"
-        
-        // Return StructTreeRoot ObjID
-        return [
-            'struct_tree_root_obj_id' => $structTreeRootObjId,
-            'document_obj_id' => $documentObjId
-        ];
     }
 
     /**
@@ -698,7 +313,7 @@ class AccessibleTCPDF extends TCPDF
     protected function _putXMP()
     {
         // If not PDF/UA mode, use parent's XMP unchanged
-        if (!$this->pdfua || empty($this->structureTree)) {
+        if (!$this->pdfua) {
             return parent::_putXMP();
         }
         
@@ -741,7 +356,7 @@ class AccessibleTCPDF extends TCPDF
         $annots = parent::_getannotsrefs($n);
         
         // If PDF/UA mode, add /StructParents and /Tabs after annotations
-        if ($this->pdfua && !empty($this->structureTree)) {
+        if ($this->pdfua && !$this->structureTreeBuilder->isEmpty()) {
             // Page's /StructParents maps to ParentTree for resolving MCIDs
             // CRITICAL: Adobe ignores /StructParents 0, so we use 1
             $annots .= ' /StructParents 1';
@@ -948,15 +563,24 @@ class AccessibleTCPDF extends TCPDF
      */
     protected function _putcatalog()
     {
-        // PDF/UA PATCH 1: Add DisplayDocTitle to viewer preferences
-        if ($this->pdfua && !empty($this->structureTree)) {
+        /** 
+         * === PATCH HISTORY of _putcatalog() for PDF/UA compliance ===
+         * 
+         * PDF/UA PATCH 1/2: Add DisplayDocTitle to viewer preferences
+         * PDF/UA PATCH 2/2: Add Tagged PDF support (StructTreeRoot, MarkInfo)
+        */
+
+        // ===============================================================================================
+        // === tcpdf->_putcatalog() PATCH 1/2: Add DisplayDocTitle to viewer preferences =================
+        // ===============================================================================================
+        if ($this->pdfua) {
             if (!isset($this->viewer_preferences)) {
                 $this->viewer_preferences = [];
             }
             $this->viewer_preferences['DisplayDocTitle'] = 'true';
         }
+        // ===============================================================================================
         
-        // === START: TCPDF's _putcatalog() logic (slightly simplified) ===
         // put XMP
         $xmpobj = $this->_putXMP();
         // if required, add standard sRGB ICC colour profile
@@ -1021,10 +645,15 @@ class AccessibleTCPDF extends TCPDF
         //$out .= ' /AA <<>>';
         //$out .= ' /URI <<>>';
         $out .= ' /Metadata '.$xmpobj.' 0 R';
+
+
+        // ===============================================================================================
+        // === tcpdf->_putcatalog() PATCH 2/2: Add StructTreeRoot, MarkInfo, and Lang ====================
+        // ===============================================================================================
+        $structTreeRootObjId = $this->structureTreeBuilder->getStructureObjId();
         
-        // === PDF/UA PATCH 2 & 3: Add StructTreeRoot, MarkInfo, and Lang ===
-        if ($this->pdfua && !empty($this->structureTree) && isset($this->savedStructTreeRootObjId)) {
-            $out .= ' /StructTreeRoot ' . $this->savedStructTreeRootObjId . ' 0 R';
+        if ($this->pdfua && !$this->structureTreeBuilder->isEmpty() && $structTreeRootObjId !== null) {
+            $out .= ' /StructTreeRoot ' . $structTreeRootObjId . ' 0 R';
             $out .= ' /MarkInfo << /Marked true >>';
             $out .= ' /Lang '.$this->_textstring('en-US', $oid);  // PDF/UA requires language
         } 
@@ -1033,8 +662,8 @@ class AccessibleTCPDF extends TCPDF
             $out .= ' /Lang '.$this->_textstring($this->l['a_meta_language'], $oid);
         }
         // Note: TCPDF has /StructTreeRoot and /MarkInfo commented out in original code
+        // ===============================================================================================
         
-        // === CONTINUE TCPDF logic ===
         // set OutputIntent to sRGB IEC61966-2.1 if required
         if ($this->pdfa_mode OR $this->force_srgb) {
             $out .= ' /OutputIntents [<<';
@@ -1138,7 +767,6 @@ class AccessibleTCPDF extends TCPDF
                 }
             }
         }
-        // === END TCPDF logic ===
         $out .= ' >>';
         $out .= "\n".'endobj';
         $this->_out($out);
@@ -1246,38 +874,45 @@ class AccessibleTCPDF extends TCPDF
     //     parent::_outRestoreGraphicsState();
     // }
 
-    // /**
-    //  * Override _putresources() to output structure tree objects BEFORE catalog
-    //  * This ensures xref table is correctly built
-    //  */
-    // protected function _putresources()
-    // {
-    //     // CRITICAL: Close any open BDC block before finalizing the document
-    //     if ($this->pdfua && $this->bdcManager->getActiveBDCFrame() !== null) {
-    //         // Inject EMC into the current page buffer
-    //         if ($this->state == 2 && isset($this->page)) {
-    //             $this->setPageBuffer($this->page, $this->bdcManager->closeBDC(), true);
-    //         }
-    //     }
+    /**
+     * Override _putresources() to output structure tree objects BEFORE catalog
+     * This ensures xref table is correctly built
+     */
+    protected function _putresources()
+    {
+        // CRITICAL: Close any open BDC block before finalizing the document
+        if ($this->pdfua && $this->taggingStateManager->hasAnyTaggingState()) {
+            // Inject EMC into the current page buffer
+            if ($this->state == 2 && isset($this->page)) {
+                $this->setPageBuffer($this->page, $this->taggingStateManager->closeCurrentTag(), true);
+            }
+        }
         
-    //     // Call parent first to output all standard resources
-    //     parent::_putresources();
+        // Call parent first to output all standard resources
+        parent::_putresources();
         
-    //     // Now output our structure tree objects (if PDF/UA mode is enabled)
-    //     if ($this->pdfua && !empty($this->structureTree)) {
-    //         // Save page_obj_id now that _putpages() has been called
-    //         if (property_exists($this, 'page_obj_id') && isset($this->page_obj_id) && is_array($this->page_obj_id)) {
-    //             $this->savedPageObjIds = $this->page_obj_id;
+        // Now output our structure tree objects (if PDF/UA mode is enabled)
+        if ($this->pdfua && !$this->structureTreeBuilder->isEmpty()) {
+            // Save page_obj_id now that _putpages() has been called
+            if (property_exists($this, 'page_obj_id') && isset($this->page_obj_id) && is_array($this->page_obj_id)) {
+                $this->savedPageObjIds = $this->page_obj_id;
                 
-    //             // BUILD structure tree
-    //             $structureTreeData = $this->_createStructureTree();
-    //             if ($structureTreeData !== null) {
-    //                 // Save struct tree root ID for catalog modification
-    //                 $this->savedStructTreeRootObjId = $structureTreeData['struct_tree_root_obj_id'];
-    //             }
-    //         }
-    //     }
-    // }
+                // BUILD structure tree
+                $structureTreeData = $this->structureTreeBuilder->build(
+                    $this->n,
+                    $this->savedPageObjIds,
+                    $this->annotationObjects
+                );
+
+                // Output structure tree objects
+                if ($structureTreeData !== null && isset($structureTreeData['strings'])) {
+                    foreach ($structureTreeData['strings'] as $structString) {
+                        $this->_out($structString);
+                    }
+                }
+            }
+        }
+    }
     
     /** ================================ */
     /** ==== TEXT / DRAW OPERATIONS ==== */
