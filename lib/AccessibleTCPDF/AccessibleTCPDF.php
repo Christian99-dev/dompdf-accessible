@@ -14,6 +14,7 @@ require_once __DIR__ . '/tcpdf/tcpdf.php';
 // Load Accessibility Managers
 require_once __DIR__ . '/BDCStateManager.php';
 require_once __DIR__ . '/DrawingManager.php';
+require_once __DIR__ . '/TagOps.php';
 require_once __DIR__ . '../../../src/SemanticTree.php';
 
 /**
@@ -185,7 +186,6 @@ class AccessibleTCPDF extends TCPDF
 
     // ========================================================================
     // UTILS
-    // These methods provide a helper functions inside this class
     // ========================================================================
 
     /**
@@ -614,244 +614,61 @@ class AccessibleTCPDF extends TCPDF
     }
 
     // ========================================================================
-    // TCPDF CORE OVERRIDES
-    // All following methods override TCPDF to inject PDF/UA accessibility features.
-    //
-    // IMPORTANT: Semantic elements can be NULL
-    // -----------------------------------------
-    // Dompdf creates additional frames DURING reflow (after semantic registration):
-    // - Line-break frames when text wraps
-    // - Anonymous inline boxes for whitespace
-    // - Page-break frames
-    // 
-    // These auto-generated frames are NOT in the semantic registry. This is correct:
-    // they inherit the accessibility context from their parent frame automatically.
-    // 
-    // Example: "Very long heading" splits into Frame 4 + Frame 66
-    // - Frame 4: Opens /H1 tag → renders "Very long heading"  
-    // - Frame 66: NULL semantic → renders "that wraps" (inherits /H1 from parent)
-    // - Frame 4: Closes /H1 tag
-    // 
+    // TCPDF METHODS OVERRIDES
     // Always check: if($this->pdfua !== true || $semantic === null) bypass to parent
     // ========================================================================
-    
-    /**
-     * Override SetFont to redirect Base 14 fonts to PDF/UA compliant alternatives
-     * 
-     * @param string $family Font family
-     * @param string $style Font style
-     * @param float $size Font size
-     * @param string $fontfile Font file path
-     * @param string $subset Subset mode
-     * @param boolean $out Output font command
-     * @public
-     */
-    public function SetFont($family, $style='', $size=null, $fontfile='', $subset='default', $out=true) {
-        if ($this->pdfua) {
-            // Map Base 14 fonts to PDF/UA compliant DejaVu equivalents
-            static $fontMap = [
-                'helvetica' => 'dejavusans',
-                'times' => 'dejavuserif',
-                'courier' => 'dejavusansmono'
-            ];
-            
-            $familyLower = strtolower($family);
-            if (isset($fontMap[$familyLower])) {
-                error_log("[PDF/UA Font Mapping] $family → {$fontMap[$familyLower]}");
-                $family = $fontMap[$familyLower];
-            }
-        }
-        
-        parent::SetFont($family, $style, $size, $fontfile, $subset, $out);
-    }
+
+    /** ==================================== */
+    /** ==== SIMPLE (STRING) INJECTIONS ==== */
+    /** ==================================== */
 
     /**
-     * Override setFontSize to suppress font operations in PDF/UA mode
+     * Override _putXMP() to add PDF/UA identification metadata
+     * Uses reflection to inject pdfuaid namespace into parent's XMP without full override
      * 
-     * CRITICAL: We inject Tf (font selection) directly in getCellCode() BT...ET blocks.
-     * All standalone font operations outside BDC create unnecessary Artifact blocks.
-     * 
-     * SOLUTION: Suppress ALL font output in PDF/UA mode.
-     * Parent calculations still happen (font properties set in memory).
-     * Actual Tf output happens in getCellCode() where we inject it into BT...ET.
-     * 
-     * @param float $size The font size in points
-     * @param boolean $out if true output the font size command
-     * @public
-     */
-    public function setFontSize($size, $out=true) {
-        // In PDF/UA mode: suppress ALL font output (we inject Tf in getCellCode instead)
-        parent::setFontSize($size, $this->pdfua ? false : $out);
-    }
-
-    /**
-     * Override _endpage to wrap final graphics operations before page closes
-     * 
-     * This is called by endPage() BEFORE state changes to 1.
-     * Perfect place to inject final Artifact wrapper.
+     * CLEAN: No TagOps needed - just XML string manipulation
      * 
      * @protected
      */
-    protected function _endpage() {
-        // PDF/UA FIX: Close any open BDC block BEFORE wrapping page-end graphics
-        if ($this->pdfua && $this->bdcManager->getActiveBDCFrame() !== null && $this->page > 0 && $this->state == 2) {
-            $this->_out("\n" . $this->bdcManager->closeBDC());
-        }
-        
-        // PDF/UA FIX: Wrap any remaining page content as Artifact
-        if ($this->pdfua && $this->page > 0 && $this->state == 2) {
-            $this->_out("\n/Artifact BMC");  // Leading newline to separate from previous content
-        }
-        
-        // Call parent (sets state = 1)
-        parent::_endpage();
-        
-        // PDF/UA FIX: Close Artifact after state change
-        // We need to manually output EMC because state is now 1
-        if ($this->pdfua && $this->page > 0) {
-            // Manually append to page buffer since state is already 1
-            if (isset($this->pages[$this->page])) {
-                $this->pages[$this->page] .= "EMC\n";
-            }
-        }
-    }
-
-    /**
-     * Override setExtGState to wrap ExtGState operations as Artifacts
-     */
-    protected function setExtGState($gs) {
-        // SUPPRESS ExtGState when inside tagged content blocks
-        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-            return;
-        }
-        
-        // Only wrap if PDF/UA mode AND we're OUTSIDE tagged content blocks
-        if ($this->pdfua && $this->page > 0 && $this->state == 2) {
-            $this->_out('/Artifact BMC');
-            parent::setExtGState($gs);
-            $this->_out("\nEMC");
-        } else {
-            parent::setExtGState($gs);
-        }
-    }
-    
-    /**
-     * Override StartTransform to prevent untagged 'q' operator
-     */
-    public function StartTransform() {
-        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
-        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-            // Track transform matrix but don't output 'q'
-            if ($this->state != 2) {
-                return;
-            }
-            if ($this->inxobj) {
-                $this->xobjects[$this->xobjid]['transfmrk'][] = strlen($this->xobjects[$this->xobjid]['outdata']);
-            } else {
-                $this->transfmrk[$this->page][] = $this->pagelen[$this->page];
-            }
-            ++$this->transfmatrix_key;
-            $this->transfmatrix[$this->transfmatrix_key] = array();
-            return;
-        }
-        
-        parent::StartTransform();
-    }
-    
-    /**
-     * Override StopTransform to prevent untagged 'Q' operator
-     */
-    public function StopTransform() {
-        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
-        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-            // Restore transform matrix but don't output 'Q'
-            if ($this->state != 2) {
-                return;
-            }
-            if (isset($this->transfmatrix[$this->transfmatrix_key])) {
-                array_pop($this->transfmatrix[$this->transfmatrix_key]);
-                --$this->transfmatrix_key;
-                if (isset($this->transfmrk[$this->page]) AND isset($this->transfmrk[$this->page][$this->transfmatrix_key])) {
-                    $this->transfmrk[$this->page][$this->transfmatrix_key] = strlen($this->pages[$this->page]);
-                } elseif ($this->inxobj) {
-                    if (isset($this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key])) {
-                        $this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key] = strlen($this->xobjects[$this->xobjid]['outdata']);
-                    }
-                }
-            }
-            return;
-        }
-        
-        parent::StopTransform();
-    }
-    
-    /**
-     * Override _outSaveGraphicsState to prevent untagged 'q' operator
-     * 
-     * @protected
-     */
-    protected function _outSaveGraphicsState() {
-        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
-        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-            return; // Suppress 'q' output
-        }
-        
-        parent::_outSaveGraphicsState();
-    }
-    
-    /**
-     * Override _outRestoreGraphicsState to prevent untagged 'Q' operator
-     * 
-     * @protected
-     */
-    protected function _outRestoreGraphicsState() {
-        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
-        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-            return; // Suppress 'Q' output
-        }
-        
-        parent::_outRestoreGraphicsState();
-    }
-
-    /**
-     * Override _putresources() to output structure tree objects BEFORE catalog
-     * This ensures xref table is correctly built
-     */
-    protected function _putresources()
+    protected function _putXMP()
     {
-        // CRITICAL: Close any open BDC block before finalizing the document
-        if ($this->pdfua && $this->bdcManager->getActiveBDCFrame() !== null) {
-            // Inject EMC into the current page buffer
-            if ($this->state == 2 && isset($this->page)) {
-                $this->setPageBuffer($this->page, $this->bdcManager->closeBDC(), true);
-            }
+        // If not PDF/UA mode, use parent's XMP unchanged
+        if (!$this->pdfua || empty($this->structureTree)) {
+            return parent::_putXMP();
         }
         
-        // Call parent first to output all standard resources
-        parent::_putresources();
+        // SMART APPROACH: Temporarily add PDF/UA metadata to custom_xmp_rdf
+        // TCPDF's _putXMP() outputs custom_xmp_rdf before </rdf:RDF>, perfect for injection!
         
-        // Now output our structure tree objects (if PDF/UA mode is enabled)
-        if ($this->pdfua && !empty($this->structureTree)) {
-            // Save page_obj_id now that _putpages() has been called
-            if (property_exists($this, 'page_obj_id') && isset($this->page_obj_id) && is_array($this->page_obj_id)) {
-                $this->savedPageObjIds = $this->page_obj_id;
-                
-                // BUILD structure tree
-                $structureTreeData = $this->_createStructureTree();
-                if ($structureTreeData !== null) {
-                    // Save struct tree root ID for catalog modification
-                    $this->savedStructTreeRootObjId = $structureTreeData['struct_tree_root_obj_id'];
-                }
-            }
-        }
+        $savedCustomXmpRdf = $this->custom_xmp_rdf;
+        
+        // Inject PDF/UA identification
+        $pdfuaMetadata = "\t\t".'<rdf:Description rdf:about="" xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/">'."\n";
+        $pdfuaMetadata .= "\t\t\t".'<pdfuaid:part>1</pdfuaid:part>'."\n";
+        $pdfuaMetadata .= "\t\t\t".'<pdfuaid:conformance>A</pdfuaid:conformance>'."\n";
+        $pdfuaMetadata .= "\t\t".'</rdf:Description>'."\n";
+        
+        $this->custom_xmp_rdf = $savedCustomXmpRdf . $pdfuaMetadata;
+        
+        // Call parent - it will include our PDF/UA metadata
+        $result = parent::_putXMP();
+        
+        // Restore original custom_xmp_rdf
+        $this->custom_xmp_rdf = $savedCustomXmpRdf;
+        
+        return $result;
     }
-    
+
     /**
      * Override _getannotsrefs() to add /StructParents and /Tabs after annotations
      * This is cleaner than buffer manipulation and doesn't break xref table
      * 
      * CRITICAL: Adobe ignores /StructParents 0, so we use 1
      * FIX 3: /Tabs /S activates reading order in Adobe and PAC
+     * 
+     * CLEAN: No TagOps needed - just string concatenation
+     * 
+     * @protected
      */
     protected function _getannotsrefs($n)
     {
@@ -877,6 +694,10 @@ class AccessibleTCPDF extends TCPDF
      * 
      * This is THE ONLY place we need to intervene for PDF/UA Link compliance!
      * By setting $opt['Contents'] HERE, parent::Annotation() will include it automatically.
+     * 
+     * CLEAN: No TagOps needed - just metadata manipulation
+     * 
+     * @public
      */
     public function Annotation($x, $y, $w, $h, $text, $opt=array('Subtype'=>'Text'), $spaces=0)
     {
@@ -937,6 +758,10 @@ class AccessibleTCPDF extends TCPDF
      * 
      * MINIMAL override: Use parent for everything, then post-process PageAnnots
      * to inject /StructParent into Link annotations before parent outputs them.
+     * 
+     * CLEAN: No TagOps needed - just array manipulation
+     * 
+     * @protected
      */
     protected function _putannotsobjs()
     {
@@ -965,8 +790,96 @@ class AccessibleTCPDF extends TCPDF
     }
     
     /**
-     * Override _putcatalog() to add PDF/UA specific entries  
-     * Strategy: Copy TCPDF's logic but inject PDF/UA entries at the right positions
+     * Override SetFont to redirect Base 14 fonts to PDF/UA compliant alternatives
+     * 
+     * CLEAN: No TagOps needed - just font mapping logic
+     * 
+     * @param string $family Font family
+     * @param string $style Font style
+     * @param float $size Font size
+     * @param string $fontfile Font file path
+     * @param string $subset Subset mode
+     * @param boolean $out Output font command
+     * @public
+     */
+    public function SetFont($family, $style='', $size=null, $fontfile='', $subset='default', $out=true) {
+        if ($this->pdfua) {
+            // Map Base 14 fonts to PDF/UA compliant DejaVu equivalents
+            static $fontMap = [
+                'helvetica' => 'dejavusans',
+                'times' => 'dejavuserif',
+                'courier' => 'dejavusansmono'
+            ];
+            
+            $familyLower = strtolower($family);
+            if (isset($fontMap[$familyLower])) {
+                error_log("[PDF/UA Font Mapping] $family → {$fontMap[$familyLower]}");
+                $family = $fontMap[$familyLower];
+            }
+        }
+        
+        parent::SetFont($family, $style, $size, $fontfile, $subset, $out);
+    }
+
+    /**
+     * Override setFontSize to suppress font operations in PDF/UA mode
+     * 
+     * CRITICAL: We inject Tf (font selection) directly in getCellCode() BT...ET blocks.
+     * All standalone font operations outside BDC create unnecessary Artifact blocks.
+     * 
+     * SOLUTION: Suppress ALL font output in PDF/UA mode.
+     * Parent calculations still happen (font properties set in memory).
+     * Actual Tf output happens in getCellCode() where we inject it into BT...ET.
+     * 
+     * CLEAN: No TagOps needed - just suppression logic
+     * 
+     * @param float $size The font size in points
+     * @param boolean $out if true output the font size command
+     * @public
+     */
+    public function setFontSize($size, $out=true) {
+        // In PDF/UA mode: suppress ALL font output (we inject Tf in getCellCode instead)
+        parent::setFontSize($size, $this->pdfua ? false : $out);
+    }
+
+    /**
+     * Override _endpage to wrap final graphics operations before page closes
+     * 
+     * This is called by endPage() BEFORE state changes to 1.
+     * Perfect place to inject final Artifact wrapper.
+     * 
+     * REFACTORED: Now uses TagOps for clean operator generation
+     * 
+     * @protected
+     */
+    protected function _endpage() {
+        // PDF/UA FIX: Close any open BDC block BEFORE wrapping page-end graphics
+        if ($this->pdfua && $this->bdcManager->getActiveBDCFrame() !== null && $this->page > 0 && $this->state == 2) {
+            $this->_out("\n" . $this->bdcManager->closeBDC());
+        }
+        
+        // PDF/UA FIX: Wrap any remaining page content as Artifact
+        if ($this->pdfua && $this->page > 0 && $this->state == 2) {
+            $this->_out("\n" . TagOps::artifactOpen());
+        }
+        
+        // Call parent (sets state = 1)
+        parent::_endpage();
+        
+        // PDF/UA FIX: Close Artifact after state change
+        // We need to manually output EMC because state is now 1
+        if ($this->pdfua && $this->page > 0) {
+            // Manually append to page buffer since state is already 1
+            if (isset($this->pages[$this->page])) {
+                $this->pages[$this->page] .= TagOps::artifactClose();
+            }
+        }
+    }
+
+    /**
+     * CLEAN: No TagOps needed - just PDF object string building
+     * 
+     * @protected
      */
     protected function _putcatalog()
     {
@@ -1167,39 +1080,144 @@ class AccessibleTCPDF extends TCPDF
         return $oid;
     }
 
+    /** ==================================== */
+    /** ==== STATE DEPENDENT INJECTIONS ==== */
+    /** ==================================== */
+
     /**
-     * Override _putXMP() to add PDF/UA identification metadata
-     * Uses reflection to inject pdfuaid namespace into parent's XMP without full override
+     * Override setExtGState to wrap ExtGState operations as Artifacts
      */
-    protected function _putXMP()
-    {
-        // If not PDF/UA mode, use parent's XMP unchanged
-        if (!$this->pdfua || empty($this->structureTree)) {
-            return parent::_putXMP();
+    protected function setExtGState($gs) {
+        // SUPPRESS ExtGState when inside tagged content blocks
+        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
+            return;
         }
         
-        // SMART APPROACH: Temporarily add PDF/UA metadata to custom_xmp_rdf
-        // TCPDF's _putXMP() outputs custom_xmp_rdf before </rdf:RDF>, perfect for injection!
-        
-        $savedCustomXmpRdf = $this->custom_xmp_rdf;
-        
-        // Inject PDF/UA identification
-        $pdfuaMetadata = "\t\t".'<rdf:Description rdf:about="" xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/">'."\n";
-        $pdfuaMetadata .= "\t\t\t".'<pdfuaid:part>1</pdfuaid:part>'."\n";
-        $pdfuaMetadata .= "\t\t\t".'<pdfuaid:conformance>A</pdfuaid:conformance>'."\n";
-        $pdfuaMetadata .= "\t\t".'</rdf:Description>'."\n";
-        
-        $this->custom_xmp_rdf = $savedCustomXmpRdf . $pdfuaMetadata;
-        
-        // Call parent - it will include our PDF/UA metadata
-        $result = parent::_putXMP();
-        
-        // Restore original custom_xmp_rdf
-        $this->custom_xmp_rdf = $savedCustomXmpRdf;
-        
-        return $result;
+        // Only wrap if PDF/UA mode AND we're OUTSIDE tagged content blocks
+        if ($this->pdfua && $this->page > 0 && $this->state == 2) {
+            $this->_out('/Artifact BMC');
+            parent::setExtGState($gs);
+            $this->_out("\nEMC");
+        } else {
+            parent::setExtGState($gs);
+        }
     }
     
+    /**
+     * Override StartTransform to prevent untagged 'q' operator
+     */
+    public function StartTransform() {
+        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
+        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
+            // Track transform matrix but don't output 'q'
+            if ($this->state != 2) {
+                return;
+            }
+            if ($this->inxobj) {
+                $this->xobjects[$this->xobjid]['transfmrk'][] = strlen($this->xobjects[$this->xobjid]['outdata']);
+            } else {
+                $this->transfmrk[$this->page][] = $this->pagelen[$this->page];
+            }
+            ++$this->transfmatrix_key;
+            $this->transfmatrix[$this->transfmatrix_key] = array();
+            return;
+        }
+        
+        parent::StartTransform();
+    }
+    
+    /**
+     * Override StopTransform to prevent untagged 'Q' operator
+     */
+    public function StopTransform() {
+        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
+        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
+            // Restore transform matrix but don't output 'Q'
+            if ($this->state != 2) {
+                return;
+            }
+            if (isset($this->transfmatrix[$this->transfmatrix_key])) {
+                array_pop($this->transfmatrix[$this->transfmatrix_key]);
+                --$this->transfmatrix_key;
+                if (isset($this->transfmrk[$this->page]) AND isset($this->transfmrk[$this->page][$this->transfmatrix_key])) {
+                    $this->transfmrk[$this->page][$this->transfmatrix_key] = strlen($this->pages[$this->page]);
+                } elseif ($this->inxobj) {
+                    if (isset($this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key])) {
+                        $this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key] = strlen($this->xobjects[$this->xobjid]['outdata']);
+                    }
+                }
+            }
+            return;
+        }
+        
+        parent::StopTransform();
+    }
+    
+    /**
+     * Override _outSaveGraphicsState to prevent untagged 'q' operator
+     * 
+     * @protected
+     */
+    protected function _outSaveGraphicsState() {
+        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
+        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
+            return; // Suppress 'q' output
+        }
+        
+        parent::_outSaveGraphicsState();
+    }
+    
+    /**
+     * Override _outRestoreGraphicsState to prevent untagged 'Q' operator
+     * 
+     * @protected
+     */
+    protected function _outRestoreGraphicsState() {
+        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
+        if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
+            return; // Suppress 'Q' output
+        }
+        
+        parent::_outRestoreGraphicsState();
+    }
+
+    /**
+     * Override _putresources() to output structure tree objects BEFORE catalog
+     * This ensures xref table is correctly built
+     */
+    protected function _putresources()
+    {
+        // CRITICAL: Close any open BDC block before finalizing the document
+        if ($this->pdfua && $this->bdcManager->getActiveBDCFrame() !== null) {
+            // Inject EMC into the current page buffer
+            if ($this->state == 2 && isset($this->page)) {
+                $this->setPageBuffer($this->page, $this->bdcManager->closeBDC(), true);
+            }
+        }
+        
+        // Call parent first to output all standard resources
+        parent::_putresources();
+        
+        // Now output our structure tree objects (if PDF/UA mode is enabled)
+        if ($this->pdfua && !empty($this->structureTree)) {
+            // Save page_obj_id now that _putpages() has been called
+            if (property_exists($this, 'page_obj_id') && isset($this->page_obj_id) && is_array($this->page_obj_id)) {
+                $this->savedPageObjIds = $this->page_obj_id;
+                
+                // BUILD structure tree
+                $structureTreeData = $this->_createStructureTree();
+                if ($structureTreeData !== null) {
+                    // Save struct tree root ID for catalog modification
+                    $this->savedStructTreeRootObjId = $structureTreeData['struct_tree_root_obj_id'];
+                }
+            }
+        }
+    }
+    
+    /** ================================ */
+    /** ==== TEXT / DRAW OPERATIONS ==== */
+    /** ================================ */
+
     /**
      * Override getCellCode() to add PDF/UA tagging via Unified Architecture
      * 
@@ -1268,12 +1286,6 @@ class AccessibleTCPDF extends TCPDF
         
         return $result['pdfCode'] . $cellCode;
     }
-
-    // ========================================================================
-    // DRAWING OPERATIONS - Using DrawingManager for PDF/UA compliance
-    // This is the CORE architectural decision point for ALL PDF drawing operations.
-    // Every drawing method (Line, Rect, Circle, etc.) should use this pattern.
-    // ========================================================================
 
     /**
      * Override Line() using universal drawing pattern
