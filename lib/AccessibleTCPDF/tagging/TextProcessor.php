@@ -65,7 +65,7 @@ class TextProcessor implements ContentProcessor
         SemanticTree $semanticTree
     ): TextDecision {
         SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-            sprintf("Analyzing: frameId=%s, hasSemanticState=%s, activeFrameId=%s", 
+            sprintf("Analyzing: frameId=%s, hasSemanticState=%s, activeFrameId=%s ------------->", 
                 $frameId ?? 'null',
                 $stateManager->hasSemanticState() ? 'true' : 'false',
                 $stateManager->getActiveSemanticFrameId() ?? 'null'));
@@ -180,8 +180,9 @@ class TextProcessor implements ContentProcessor
         }
         
         SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-            sprintf("Execution complete, output length=%d", strlen($output)));
-        
+            sprintf("Execution complete, output length=%s \n <-------", $output));
+
+
         return $output;
     }
 }
