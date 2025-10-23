@@ -50,23 +50,25 @@ class StructureTreeBuilder
 
     /**
      * Register a new MCID with its semantic element
-     * Called by TextProcessor during rendering when opening new semantic BDC
      * 
+     * Called when semantic BDC is opened (from onBDCOpened callback).
+     * 
+     * @param SemanticNode $node Semantic node
      * @param int $mcid Marked Content ID
      * @param int $page Page number (1-based)
-     * @param SemanticNode $semantic Semantic node for this MCID
+     * @return void
      */
-    public function add(int $mcid, int $page, SemanticNode $semantic): void
+    public function add(SemanticNode $node, int $mcid, int $page): void
     {
         $this->structureTree[] = [
             'mcid' => $mcid,
             'page' => $page,
-            'semantic' => $semantic
+            'semantic' => $node
         ];
         
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
             sprintf("Registered MCID %d on page %d for element %d (%s)", 
-                $mcid, $page, $semantic->id, $semantic->getPdfStructureTag())
+                $mcid, $page, $node->id, $node->getPdfStructureTag())
         );
     }
 

@@ -37,13 +37,14 @@ class TextProcessor implements ContentProcessor
         ?string $frameId,
         TaggingStateManager $stateManager,
         SemanticTree $semanticTree,
-        callable $contentRenderer
+        callable $contentRenderer,
+        ?callable $onBDCOpened = null
     ): string {
         // PHASE 1: Analyze - What should we do?
         $decision = $this->analyze($frameId, $stateManager, $semanticTree);
         
         // PHASE 2: Execute - Do it!
-        return $this->execute($decision, $frameId, $stateManager, $semanticTree, $contentRenderer);
+        return $this->execute($decision, $frameId, $stateManager, $semanticTree, $contentRenderer, $onBDCOpened);
     }
     
     /**
@@ -113,6 +114,7 @@ class TextProcessor implements ContentProcessor
      * @param TaggingStateManager $stateManager State manager
      * @param SemanticTree $semanticTree Semantic tree
      * @param callable $contentRenderer Content rendering callback
+     * @param callable|null $onBDCOpened Callback when BDC is opened: fn(string $frameId, int $mcid, string $pdfTag, int $pageNumber): void
      * @return string PDF operators
      */
     public function execute(
@@ -120,7 +122,8 @@ class TextProcessor implements ContentProcessor
         ?string $frameId,
         TaggingStateManager $stateManager,
         SemanticTree $semanticTree,
-        callable $contentRenderer
+        callable $contentRenderer,
+        ?callable $onBDCOpened = null
     ): string {
         SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
             sprintf("Executing: decision=%s, frameId=%s", $decision->name, $frameId ?? 'null'));
@@ -149,6 +152,15 @@ class TextProcessor implements ContentProcessor
                 SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
                     sprintf("Opened new Semantic BDC: tag=%s, mcid=%d, frameId=%s", 
                         $pdfTag, $mcid, $frameId));
+                
+                // CALLBACK: Notify that BDC was opened
+                if ($onBDCOpened !== null) {
+                    $pageNumber = $stateManager->getCurrentPage();
+                    SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+                        sprintf("Calling onBDCOpened callback: frameId=%s, mcid=%d, tag=%s, page=%d", 
+                            $frameId, $mcid, $pdfTag, $pageNumber));
+                    $onBDCOpened($frameId, $mcid, $pdfTag, $pageNumber);
+                }
                 
                 // Render content
                 $output .= $contentRenderer();

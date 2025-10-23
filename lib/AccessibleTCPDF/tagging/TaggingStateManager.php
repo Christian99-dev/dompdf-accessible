@@ -57,6 +57,13 @@ class TaggingStateManager
      */
     private int $mcidCounter = 0;
     
+    /**
+     * Current page number (1-based)
+     * Used for Structure Tree entries and callbacks
+     * @var int
+     */
+    private int $currentPage = 0;
+    
     // ========================================================================
     // SEMANTIC STATE METHODS
     // ========================================================================
@@ -290,6 +297,44 @@ class TaggingStateManager
     public function resetMCID(): void
     {
         $this->mcidCounter = 0;
+    }
+    
+    // ========================================================================
+    // PAGE MANAGEMENT
+    // ========================================================================
+    
+    /**
+     * Set current page number
+     * 
+     * Called by AccessibleTCPDF when starting a new page.
+     * Should also reset MCID counter for new page.
+     * 
+     * @param int $pageNumber Current page number (1-based)
+     * @return void
+     */
+    public function setCurrentPage(int $pageNumber): void
+    {
+        $this->currentPage = $pageNumber;
+        
+        // Auto-reset MCID counter for new page
+        if ($pageNumber > 0) {
+            $this->resetMCID();
+        }
+        
+        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+            sprintf("Page set to %d, MCID counter reset", $pageNumber));
+    }
+    
+    /**
+     * Get current page number
+     * 
+     * Used by callbacks to pass page number to StructureTreeBuilder.
+     * 
+     * @return int Current page number (0 if not set)
+     */
+    public function getCurrentPage(): int
+    {
+        return $this->currentPage;
     }
     
     // ========================================================================

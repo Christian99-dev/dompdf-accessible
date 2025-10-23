@@ -122,6 +122,14 @@ class AccessibleTCPDF extends TCPDF
      * @var int
      */
     private int $structParentCounter = 1;
+    
+    /**
+     * Callback for BDC opened event
+     * Called by ContentProcessors when semantic BDC is opened
+     * Signature: fn(string $frameId, int $mcid, string $pdfTag, int $pageNumber): void
+     * @var callable|null
+     */
+    private $onBDCOpenedCallback = null;
 
     /**
      * Constructor
@@ -205,8 +213,40 @@ class AccessibleTCPDF extends TCPDF
         // Drawing Processor - No dependencies (receives state via process())
         $this->drawingProcessor = new DrawingProcessor();
 
-        // Structure Tree Builder
-        $this->structureTreeBuilder = new StructureTreeBuilder($this->semanticTree);
+        // Structure Tree Builder - NO dependencies! Pure data collector
+        $this->structureTreeBuilder = new StructureTreeBuilder();
+        
+        // ========================================================================
+        // CALLBACK: BDC Opened Event Handler
+        // ========================================================================
+        // CLEAN ARCHITECTURE: Define callback ONCE in constructor
+        // 
+        // This callback is passed to ContentProcessors (TextProcessor, DrawingProcessor)
+        // to notify StructureTreeBuilder when semantic BDC blocks are opened.
+        //
+        // Benefits:
+        // - Single definition point (DRY principle)  
+        // - Direct access to $this properties (SemanticTree, StructureTreeBuilder)
+        // - No code duplication in every drawing/text method
+        // - StructureTreeBuilder receives only what it needs (no dependencies!)
+        // ========================================================================
+        $this->onBDCOpenedCallback = function(string $frameId, int $mcid, string $pdfTag, int $pageNumber): void {
+            // Get node from SemanticTree (AccessibleTCPDF responsibility!)
+            if ($this->semanticTree === null) {
+                return;
+            }
+            
+            $node = $this->semanticTree->getNodeById($frameId);
+            
+            if ($node === null) {
+                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                    sprintf("WARNING: Node not found for frameId=%s", $frameId));
+                return;
+            }
+            
+            // Add to StructureTreeBuilder
+            $this->structureTreeBuilder->add($node, $mcid, $pageNumber);
+        };
     }
 
     /**
@@ -505,6 +545,20 @@ class AccessibleTCPDF extends TCPDF
         }
         
         parent::SetFont($family, $style, $size, $fontfile, $subset, $out);
+    }
+    
+    /**
+     * Override _beginpage to track page number in TaggingStateManager
+     * 
+     * @protected
+     */
+    protected function _beginpage($orientation='', $format='', $boxdef=array()) {
+        parent::_beginpage($orientation, $format, $boxdef);
+        
+        // Update page number in TaggingStateManager (also resets MCID counter)
+        if ($this->pdfua && $this->page > 0) {
+            $this->taggingStateManager->setCurrentPage($this->page);
+        }
     }
 
     /**
@@ -912,7 +966,10 @@ class AccessibleTCPDF extends TCPDF
 
                 // Output structure tree objects
                 if ($structureTreeData !== null && isset($structureTreeData['strings'])) {
-                    foreach ($structureTreeData['strings'] as $structString) {
+                    foreach ($structureTreeData['strings'] as $idx => $structString) {
+                        $this->_newobj();
+                        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+                            sprintf("Outputting struct object %d (n=%d)", $idx + 1, $this->n));
                         $this->_out($structString);
                     }
                 }
@@ -978,7 +1035,8 @@ class AccessibleTCPDF extends TCPDF
             $this->currentFrameId,
             $this->taggingStateManager,
             $this->semanticTree,
-            fn() => $cellCode
+            fn() => $cellCode,
+            $this->onBDCOpenedCallback  // Pass callback!
         );  
     }
 
@@ -999,7 +1057,8 @@ class AccessibleTCPDF extends TCPDF
             $this->semanticTree,
             fn() => $this->captureParentOutput(
                 fn() => parent::Line($x1, $y1, $x2, $y2, $style)
-            )
+            ),
+            $this->onBDCOpenedCallback  // Pass callback!
         );
         
         $this->_out($output);
@@ -1022,7 +1081,8 @@ class AccessibleTCPDF extends TCPDF
             $this->semanticTree,
             fn() => $this->captureParentOutput(
                 fn() => parent::Rect($x, $y, $w, $h, $style, $border_style, $fill_color)
-            )
+            ),
+            $this->onBDCOpenedCallback  // Pass callback!
         );
         
         $this->_out($output);
@@ -1045,7 +1105,8 @@ class AccessibleTCPDF extends TCPDF
             $this->semanticTree,
             fn() => $this->captureParentOutput(
                 fn() => parent::Circle($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc)
-            )
+            ),
+            $this->onBDCOpenedCallback  // Pass callback!
         );
         
         $this->_out($output);
@@ -1068,7 +1129,8 @@ class AccessibleTCPDF extends TCPDF
             $this->semanticTree,
             fn() => $this->captureParentOutput(
                 fn() => parent::Ellipse($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc)
-            )
+            ),
+            $this->onBDCOpenedCallback  // Pass callback!
         );
         
         $this->_out($output);
@@ -1091,7 +1153,8 @@ class AccessibleTCPDF extends TCPDF
             $this->semanticTree,
             fn() => $this->captureParentOutput(
                 fn() => parent::Polygon($p, $style, $line_style, $fill_color, $closed)
-            )
+            ),
+            $this->onBDCOpenedCallback  // Pass callback!
         );
         
         $this->_out($output);

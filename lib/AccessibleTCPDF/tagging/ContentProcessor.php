@@ -27,12 +27,14 @@ interface ContentProcessor
      * @param TaggingStateManager $stateManager State manager instance
      * @param SemanticTree $semanticTree Semantic tree for node lookup
      * @param callable $contentRenderer Callback that renders the actual content
+     * @param callable|null $onBDCOpened Callback when semantic BDC is opened: fn(string $frameId, int $mcid, string $pdfTag, int $pageNumber): void
      * @return string PDF operators (BDC/EMC/Artifact + content)
      */
     public function process(
         ?string $frameId,
         TaggingStateManager $stateManager,
         SemanticTree $semanticTree,
-        callable $contentRenderer
+        callable $contentRenderer,
+        ?callable $onBDCOpened = null
     ): string;
 }

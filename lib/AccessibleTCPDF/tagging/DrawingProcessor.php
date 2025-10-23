@@ -36,13 +36,14 @@ class DrawingProcessor implements ContentProcessor
         ?string $frameId,
         TaggingStateManager $stateManager,
         SemanticTree $semanticTree,
-        callable $contentRenderer
+        callable $contentRenderer,
+        ?callable $onBDCOpened = null
     ): string {
         // PHASE 1: Analyze - What should we do?
         $decision = $this->analyze($frameId, $stateManager, $semanticTree);
         
         // PHASE 2: Execute - Do it!
-        return $this->execute($decision, $stateManager, $semanticTree, $contentRenderer);
+        return $this->execute($decision, $stateManager, $semanticTree, $contentRenderer, $onBDCOpened);
     }
     
     /**
@@ -99,13 +100,15 @@ class DrawingProcessor implements ContentProcessor
      * @param TaggingStateManager $stateManager State manager
      * @param SemanticTree $semanticTree Semantic tree
      * @param callable $contentRenderer Content rendering callback
+     * @param callable|null $onBDCOpened Callback when BDC is (re-)opened: fn(string $frameId, int $mcid, string $pdfTag, int $pageNumber): void
      * @return string PDF operators
      */
     public function execute(
         DrawingDecision $decision,
         TaggingStateManager $stateManager,
         SemanticTree $semanticTree,
-        callable $contentRenderer
+        callable $contentRenderer,
+        ?callable $onBDCOpened = null
     ): string {
         SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
             sprintf("Executing: decision=%s", $decision->name));
@@ -147,6 +150,15 @@ class DrawingProcessor implements ContentProcessor
                         $savedFrameId, $savedMcid ?? -1, $savedPdfTag));
                 $output .= TagOps::bdcOpen($savedPdfTag, $savedMcid);
                 $stateManager->openSemanticBDC($savedFrameId, $savedMcid);
+                
+                // CALLBACK: Notify that BDC was re-opened (important for StructTree!)
+                if ($onBDCOpened !== null) {
+                    $pageNumber = $stateManager->getCurrentPage();
+                    SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+                        sprintf("Calling onBDCOpened callback (re-open): frameId=%s, mcid=%d, tag=%s, page=%d", 
+                            $savedFrameId, $savedMcid ?? -1, $savedPdfTag, $pageNumber));
+                    $onBDCOpened($savedFrameId, $savedMcid, $savedPdfTag, $pageNumber);
+                }
                 break;
                 
             case DrawingDecision::CONTINUE:
