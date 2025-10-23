@@ -952,18 +952,12 @@ class AccessibleTCPDF extends TCPDF
         }
         
         // Use TextProcessor to handle tagging
-        $output = $this->textProcessor->process(
+        return $this->textProcessor->process(
             $this->currentFrameId,
             $this->taggingStateManager,
             $this->semanticTree,
             fn() => $cellCode
-        );
-        
-        // Output the processed code
-        $this->_out($output);
-        
-        // Return empty string since we already output
-        return '';
+        );  
     }
 
     /**
