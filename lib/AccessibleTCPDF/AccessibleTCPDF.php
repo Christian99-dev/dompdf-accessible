@@ -149,7 +149,13 @@ class AccessibleTCPDF extends TCPDF
     ) 
     {        
         parent::__construct($orientation, $unit, $format, $unicode, $encoding, $diskcache, $pdfa);
-        $this->pdfua = $pdfua === true && $semanticTree !== null;
+
+        // Redundant for now, but in the future, if there are other rules for surpressing PDF/UA completely, add it to the rule below.
+        // for example, if for some reason you want to disable PDF/UA completely if you are in PDF/A mode, you can do it here, by adding: 
+        // -> $this->pdfua = $pdfua && !$pdfa;
+        // All pdfua checks go through this ($this->pdfua) flag.
+        $this->pdfua = $pdfua === true;
+
         if(!$this->pdfua) return;
 
         SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, "PDF/UA mode enabled.");
