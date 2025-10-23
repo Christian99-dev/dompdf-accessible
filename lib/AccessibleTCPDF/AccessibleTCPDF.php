@@ -502,27 +502,6 @@ class AccessibleTCPDF extends TCPDF
     }
 
     /**
-     * Override setFontSize to suppress font operations in PDF/UA mode
-     * 
-     * CRITICAL: We inject Tf (font selection) directly in getCellCode() BT...ET blocks.
-     * All standalone font operations outside BDC create unnecessary Artifact blocks.
-     * 
-     * SOLUTION: Suppress ALL font output in PDF/UA mode.
-     * Parent calculations still happen (font properties set in memory).
-     * Actual Tf output happens in getCellCode() where we inject it into BT...ET.
-     * 
-     * CLEAN: No TagOps needed - just suppression logic
-     * 
-     * @param float $size The font size in points
-     * @param boolean $out if true output the font size command
-     * @public
-     */
-    public function setFontSize($size, $out=true) {
-        // In PDF/UA mode: suppress ALL font output (we inject Tf in getCellCode instead)
-        parent::setFontSize($size, $this->pdfua ? false : $out);
-    }
-
-    /**
      * Override _endpage to wrap final graphics operations before page closes
      * 
      * This is called by endPage() BEFORE state changes to 1.
