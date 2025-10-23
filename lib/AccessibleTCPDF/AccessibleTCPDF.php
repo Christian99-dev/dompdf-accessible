@@ -777,55 +777,55 @@ class AccessibleTCPDF extends TCPDF
         }
     }
     
-    // /**
-    //  * Override StartTransform to prevent untagged 'q' operator
-    //  */
-    // public function StartTransform() {
-    //     // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
-    //     if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-    //         // Track transform matrix but don't output 'q'
-    //         if ($this->state != 2) {
-    //             return;
-    //         }
-    //         if ($this->inxobj) {
-    //             $this->xobjects[$this->xobjid]['transfmrk'][] = strlen($this->xobjects[$this->xobjid]['outdata']);
-    //         } else {
-    //             $this->transfmrk[$this->page][] = $this->pagelen[$this->page];
-    //         }
-    //         ++$this->transfmatrix_key;
-    //         $this->transfmatrix[$this->transfmatrix_key] = array();
-    //         return;
-    //     }
+    /**
+     * Override StartTransform to prevent untagged 'q' operator
+     */
+    public function StartTransform() {
+        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
+        if ($this->pdfua && $this->taggingStateManager->hasAnyTaggingState()) {
+            // Track transform matrix but don't output 'q'
+            if ($this->state != 2) {
+                return;
+            }
+            if ($this->inxobj) {
+                $this->xobjects[$this->xobjid]['transfmrk'][] = strlen($this->xobjects[$this->xobjid]['outdata']);
+            } else {
+                $this->transfmrk[$this->page][] = $this->pagelen[$this->page];
+            }
+            ++$this->transfmatrix_key;
+            $this->transfmatrix[$this->transfmatrix_key] = array();
+            return;
+        }
         
-    //     parent::StartTransform();
-    // }
+        parent::StartTransform();
+    }
     
-    // /**
-    //  * Override StopTransform to prevent untagged 'Q' operator
-    //  */
-    // public function StopTransform() {
-    //     // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
-    //     if ($this->pdfua && $this->bdcManager->isInsideTaggedContent()) {
-    //         // Restore transform matrix but don't output 'Q'
-    //         if ($this->state != 2) {
-    //             return;
-    //         }
-    //         if (isset($this->transfmatrix[$this->transfmatrix_key])) {
-    //             array_pop($this->transfmatrix[$this->transfmatrix_key]);
-    //             --$this->transfmatrix_key;
-    //             if (isset($this->transfmrk[$this->page]) AND isset($this->transfmrk[$this->page][$this->transfmatrix_key])) {
-    //                 $this->transfmrk[$this->page][$this->transfmatrix_key] = strlen($this->pages[$this->page]);
-    //             } elseif ($this->inxobj) {
-    //                 if (isset($this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key])) {
-    //                     $this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key] = strlen($this->xobjects[$this->xobjid]['outdata']);
-    //                 }
-    //             }
-    //         }
-    //         return;
-    //     }
+    /**
+     * Override StopTransform to prevent untagged 'Q' operator
+     */
+    public function StopTransform() {
+        // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
+        if ($this->pdfua && $this->taggingStateManager->hasAnyTaggingState()) {
+            // Restore transform matrix but don't output 'Q'
+            if ($this->state != 2) {
+                return;
+            }
+            if (isset($this->transfmatrix[$this->transfmatrix_key])) {
+                array_pop($this->transfmatrix[$this->transfmatrix_key]);
+                --$this->transfmatrix_key;
+                if (isset($this->transfmrk[$this->page]) AND isset($this->transfmrk[$this->page][$this->transfmatrix_key])) {
+                    $this->transfmrk[$this->page][$this->transfmatrix_key] = strlen($this->pages[$this->page]);
+                } elseif ($this->inxobj) {
+                    if (isset($this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key])) {
+                        $this->xobjects[$this->xobjid]['transfmrk'][$this->transfmatrix_key] = strlen($this->xobjects[$this->xobjid]['outdata']);
+                    }
+                }
+            }
+            return;
+        }
         
-    //     parent::StopTransform();
-    // }
+        parent::StopTransform();
+    }
     
     // /**
     //  * Override _outSaveGraphicsState to prevent untagged 'q' operator
