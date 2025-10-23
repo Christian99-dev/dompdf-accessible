@@ -38,6 +38,13 @@ class TaggingStateManager
     private ?string $activeSemanticFrameId = null;
     
     /**
+     * MCID of the currently open semantic BDC
+     * null = No semantic BDC is open
+     * @var int|null
+     */
+    private ?int $activeSemanticMCID = null;
+    
+    /**
      * Are we currently inside an Artifact BDC?
      * @var bool
      */
@@ -82,19 +89,32 @@ class TaggingStateManager
     }
     
     /**
+     * Get the MCID of the currently active semantic BDC
+     * 
+     * CRITICAL: This is used for re-opening BDC with the SAME MCID after interruptions.
+     * 
+     * @return int|null MCID or null if no semantic BDC is open
+     */
+    public function getActiveSemanticMCID(): ?int
+    {
+        return $this->activeSemanticMCID;
+    }
+    
+    /**
      * Open a semantic BDC block
      * 
      * CRITICAL: Automatically closes any open Artifact BDC!
      * This enforces mutual exclusion (no nested BDCs).
      * 
      * @param string $frameId The frame ID being tagged
+     * @param int $mcid The MCID for this BDC
      * @return void
      */
-    public function openSemanticBDC(string $frameId): void
+    public function openSemanticBDC(string $frameId, int $mcid): void
     {
         SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-            sprintf("Opening Semantic BDC: frameId=%s, wasInArtifact=%s", 
-                $frameId, $this->isInArtifact ? 'true' : 'false'));
+            sprintf("Opening Semantic BDC: frameId=%s, mcid=%d, wasInArtifact=%s", 
+                $frameId, $mcid, $this->isInArtifact ? 'true' : 'false'));
         
         // Enforce mutual exclusion
         if ($this->isInArtifact) {
@@ -104,6 +124,7 @@ class TaggingStateManager
         }
         
         $this->activeSemanticFrameId = $frameId;
+        $this->activeSemanticMCID = $mcid;
     }
     
     /**
@@ -114,9 +135,12 @@ class TaggingStateManager
     public function closeSemanticBDC(): void
     {
         SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-            sprintf("Closing Semantic BDC: frameId=%s", $this->activeSemanticFrameId ?? 'null'));
+            sprintf("Closing Semantic BDC: frameId=%s, mcid=%s", 
+                $this->activeSemanticFrameId ?? 'null',
+                $this->activeSemanticMCID !== null ? (string)$this->activeSemanticMCID : 'null'));
         
         $this->activeSemanticFrameId = null;
+        $this->activeSemanticMCID = null;
     }
     
     // ========================================================================

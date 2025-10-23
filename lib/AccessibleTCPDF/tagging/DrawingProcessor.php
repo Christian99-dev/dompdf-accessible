@@ -116,7 +116,7 @@ class DrawingProcessor implements ContentProcessor
             case DrawingDecision::INTERRUPT:
                 // Save state from StateManager (Single Source of Truth!)
                 $savedFrameId = $stateManager->getActiveSemanticFrameId();
-                $savedMcid = $stateManager->getCurrentMCID();
+                $savedMcid = $stateManager->getActiveSemanticMCID();
                 
                 // Get PDF tag for re-open
                 $node = $semanticTree->getNodeById($savedFrameId);
@@ -124,7 +124,7 @@ class DrawingProcessor implements ContentProcessor
                 
                 SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
                     sprintf("Interrupting Semantic: frameId=%s, mcid=%d, tag=%s", 
-                        $savedFrameId, $savedMcid, $savedPdfTag));
+                        $savedFrameId, $savedMcid ?? -1, $savedPdfTag));
                 
                 // 1. Close semantic BDC
                 $output .= TagOps::emc();
@@ -144,9 +144,9 @@ class DrawingProcessor implements ContentProcessor
                 // 5. Re-open semantic BDC with SAME MCID (critical!)
                 SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
                     sprintf("Re-opening Semantic with SAME MCID: frameId=%s, mcid=%d, tag=%s", 
-                        $savedFrameId, $savedMcid, $savedPdfTag));
+                        $savedFrameId, $savedMcid ?? -1, $savedPdfTag));
                 $output .= TagOps::bdcOpen($savedPdfTag, $savedMcid);
-                $stateManager->openSemanticBDC($savedFrameId);
+                $stateManager->openSemanticBDC($savedFrameId, $savedMcid);
                 break;
                 
             case DrawingDecision::CONTINUE:

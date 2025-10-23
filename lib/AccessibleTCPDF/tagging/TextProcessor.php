@@ -144,7 +144,7 @@ class TextProcessor implements ContentProcessor
                 // Open new semantic BDC
                 $mcid = $stateManager->getNextMCID();
                 $output .= TagOps::bdcOpen($pdfTag, $mcid);
-                $stateManager->openSemanticBDC($frameId);
+                $stateManager->openSemanticBDC($frameId, $mcid);
                 
                 SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
                     sprintf("Opened new Semantic BDC: tag=%s, mcid=%d, frameId=%s", 
