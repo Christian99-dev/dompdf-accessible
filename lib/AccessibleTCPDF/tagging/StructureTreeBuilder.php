@@ -53,6 +53,10 @@ class StructureTreeBuilder
      * 
      * Called when semantic BDC is opened (from onBDCOpened callback).
      * 
+     * DEDUPLICATION: If the same (frameId, mcid, page) combination already exists,
+     * we skip registration. This handles the case where drawing operations
+     * re-open the same BDC after interruption.
+     * 
      * @param SemanticNode $node Semantic node
      * @param int $mcid Marked Content ID
      * @param int $page Page number (1-based)
@@ -60,16 +64,22 @@ class StructureTreeBuilder
      */
     public function add(SemanticNode $node, int $mcid, int $page): void
     {
+        // Check if this exact combination already exists (deduplicate)
+        foreach ($this->structureTree as $entry) {
+            if ($entry['mcid'] === $mcid && 
+                $entry['page'] === $page && 
+                $entry['semantic']->id === $node->id) {
+                // Already registered - skip duplicate (happens when drawing operations re-open BDC)
+                return;
+            }
+        }
+        
+        // New entry - register it
         $this->structureTree[] = [
             'mcid' => $mcid,
             'page' => $page,
             'semantic' => $node
         ];
-        
-        SimpleLogger::log("pdf_backend_structure_tree_logs", __METHOD__, 
-            sprintf("Registered MCID %d on page %d for element %d (%s)", 
-                $mcid, $page, $node->id, $node->getPdfStructureTag())
-        );
     }
 
     /**

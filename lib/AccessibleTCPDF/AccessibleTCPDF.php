@@ -202,20 +202,17 @@ class AccessibleTCPDF extends TCPDF
         // - StructureTreeBuilder receives only what it needs (no dependencies!)
         // ========================================================================
         $this->onBDCOpenedCallback = function(string $frameId, int $mcid, string $pdfTag, int $pageNumber): void {
-            // Get node from SemanticTree (AccessibleTCPDF responsibility!)
+            // Get node from SemanticTree
             if ($this->semanticTree === null) {
                 return;
             }
             
             $node = $this->semanticTree->getNodeById($frameId);
-            
             if ($node === null) {
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("WARNING: Node not found for frameId=%s", $frameId));
                 return;
             }
             
-            // Add to StructureTreeBuilder
+            // Add to StructureTreeBuilder (with deduplication)
             $this->structureTreeBuilder->add($node, $mcid, $pageNumber);
         };
     }
