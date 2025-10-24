@@ -33,6 +33,13 @@ class StructureTreeBuilder
     private array $structureTree = [];
 
     /**
+     * Hash set for O(1) duplicate detection (inside add()) instead of O(n) array scan
+     * Format: [ "frameId:mcid:page" => true, ... ]
+     * @var array
+     */
+    private array $registeredKeys = [];
+
+    /**
      * Cached Structure Tree Root object ID after build()
      * @var int|null
      */
@@ -57,6 +64,8 @@ class StructureTreeBuilder
      * we skip registration. This handles the case where drawing operations
      * re-open the same BDC after interruption.
      * 
+     * PERFORMANCE: O(1) lookup using hash set instead of O(n) array scan.
+     * 
      * @param SemanticNode $node Semantic node
      * @param int $mcid Marked Content ID
      * @param int $page Page number (1-based)
@@ -64,17 +73,16 @@ class StructureTreeBuilder
      */
     public function add(SemanticNode $node, int $mcid, int $page): void
     {
-        // Check if this exact combination already exists (deduplicate)
-        foreach ($this->structureTree as $entry) {
-            if ($entry['mcid'] === $mcid && 
-                $entry['page'] === $page && 
-                $entry['semantic']->id === $node->id) {
-                // Already registered - skip duplicate (happens when drawing operations re-open BDC)
-                return;
-            }
+        // Build unique key for O(1) lookup
+        $key = "{$node->id}:{$mcid}:{$page}";
+        
+        // Check if already registered (O(1) hash lookup)
+        if (isset($this->registeredKeys[$key])) {
+            return; // Skip duplicate (happens when drawing operations re-open BDC)
         }
         
         // New entry - register it
+        $this->registeredKeys[$key] = true;
         $this->structureTree[] = [
             'mcid' => $mcid,
             'page' => $page,
