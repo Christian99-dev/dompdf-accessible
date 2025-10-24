@@ -119,13 +119,13 @@ class TaggingStateManager
      */
     public function openSemanticBDC(string $frameId, int $mcid): void
     {
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+        SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
             sprintf("Opening Semantic BDC: frameId=%s, mcid=%d, wasInArtifact=%s", 
                 $frameId, $mcid, $this->isInArtifact ? 'true' : 'false'));
         
         // Enforce mutual exclusion
         if ($this->isInArtifact) {
-            SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+            SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
                 "Auto-closing Artifact to enforce mutual exclusion");
             $this->isInArtifact = false;
         }
@@ -141,7 +141,7 @@ class TaggingStateManager
      */
     public function closeSemanticBDC(): void
     {
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+        SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
             sprintf("Closing Semantic BDC: frameId=%s, mcid=%s", 
                 $this->activeSemanticFrameId ?? 'null',
                 $this->activeSemanticMCID !== null ? (string)$this->activeSemanticMCID : 'null'));
@@ -178,14 +178,14 @@ class TaggingStateManager
      */
     public function openArtifactBDC(): void
     {
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+        SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
             sprintf("Opening Artifact BDC: wasInSemantic=%s (frameId=%s)", 
                 $this->activeSemanticFrameId !== null ? 'true' : 'false',
                 $this->activeSemanticFrameId ?? 'null'));
         
         // Enforce mutual exclusion
         if ($this->activeSemanticFrameId !== null) {
-            SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+            SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
                 "Auto-closing Semantic to enforce mutual exclusion");
             $this->activeSemanticFrameId = null;
         }
@@ -200,7 +200,7 @@ class TaggingStateManager
      */
     public function closeArtifactBDC(): void
     {
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, "Closing Artifact BDC");
+        SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, "Closing Artifact BDC");
         $this->isInArtifact = false;
     }
     
@@ -234,7 +234,7 @@ class TaggingStateManager
      */
     public function closeCurrentTag(): string
     {
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+        SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
             sprintf("Closing all states: hasSemantic=%s, hasArtifact=%s", 
                 $this->hasSemanticState() ? 'true' : 'false',
                 $this->hasArtifactState() ? 'true' : 'false'));
@@ -253,7 +253,7 @@ class TaggingStateManager
             $this->closeArtifactBDC();
         }
         
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+        SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
             sprintf("Closed all states, output length=%d", strlen($output)));
         
         return $output;
@@ -284,7 +284,7 @@ class TaggingStateManager
     public function getNextMCID(): int
     {
         $mcid = $this->mcidCounter++;
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+        SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
             sprintf("Allocated MCID: %d", $mcid));
         return $mcid;
     }
@@ -321,7 +321,7 @@ class TaggingStateManager
             $this->resetMCID();
         }
         
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
+        SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
             sprintf("Page set to %d, MCID counter reset", $pageNumber));
     }
     

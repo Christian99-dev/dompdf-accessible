@@ -17,13 +17,12 @@
  */
 
 use Dompdf\SemanticTree;
-use Dompdf\SimpleLogger;
 
 require_once __DIR__ . '/ContentProcessor.php';
 require_once __DIR__ . '/DrawingDecision.php';
 require_once __DIR__ . '/TagOps.php';
 require_once __DIR__ . '/TaggingStateManager.php';
-require_once __DIR__ . '/../../../src/SimpleLogger.php';
+require_once __DIR__ . '/TreeLogger.php';
 
 class DrawingProcessor implements ContentProcessor
 {
@@ -64,27 +63,17 @@ class DrawingProcessor implements ContentProcessor
         TaggingStateManager $stateManager,
         SemanticTree $semanticTree
     ): DrawingDecision {
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-            sprintf("Analyzing: hasSemanticState=%s, hasArtifactState=%s ------------->", 
-                $stateManager->hasSemanticState() ? 'true' : 'false',
-                $stateManager->hasArtifactState() ? 'true' : 'false'));
-        
         // Semantic BDC open? → Need interruption
         if ($stateManager->hasSemanticState()) {
-            SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-                sprintf("Decision: INTERRUPT (semantic open, frameId=%s)", 
-                    $stateManager->getActiveSemanticFrameId()));
             return DrawingDecision::INTERRUPT;
         }
         
         // Artifact BDC open? → Just draw
         if ($stateManager->hasArtifactState()) {
-            SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, "Decision: CONTINUE (artifact already open)");
             return DrawingDecision::CONTINUE;
         }
         
         // Nothing open → Wrap as artifact
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, "Decision: ARTIFACT (nothing open)");
         return DrawingDecision::ARTIFACT;
     }
     
@@ -110,10 +99,10 @@ class DrawingProcessor implements ContentProcessor
         callable $contentRenderer,
         ?callable $onBDCOpened = null
     ): string {
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-            sprintf("Executing: decision=%s", $decision->name));
-        
         $output = '';
+        $pdfTag = null;
+        $mcid = null;
+        $frameId = null;
         
         switch ($decision) {
             case DrawingDecision::INTERRUPT:
@@ -124,10 +113,6 @@ class DrawingProcessor implements ContentProcessor
                 // Get PDF tag for re-open
                 $node = $semanticTree->getNodeById($savedFrameId);
                 $savedPdfTag = $node ? $node->getPdfStructureTag() : 'P';
-                
-                SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-                    sprintf("Interrupting Semantic: frameId=%s, mcid=%d, tag=%s", 
-                        $savedFrameId, $savedMcid ?? -1, $savedPdfTag));
                 
                 // 1. Close semantic BDC
                 $output .= TagOps::emc();
@@ -145,33 +130,28 @@ class DrawingProcessor implements ContentProcessor
                 $stateManager->closeArtifactBDC();
                 
                 // 5. Re-open semantic BDC with SAME MCID (critical!)
-                SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-                    sprintf("Re-opening Semantic with SAME MCID: frameId=%s, mcid=%d, tag=%s", 
-                        $savedFrameId, $savedMcid ?? -1, $savedPdfTag));
                 $output .= TagOps::bdcOpen($savedPdfTag, $savedMcid);
                 $stateManager->openSemanticBDC($savedFrameId, $savedMcid);
                 
                 // CALLBACK: Notify that BDC was re-opened (important for StructTree!)
                 if ($onBDCOpened !== null) {
                     $pageNumber = $stateManager->getCurrentPage();
-                    SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-                        sprintf("Calling onBDCOpened callback (re-open): frameId=%s, mcid=%d, tag=%s, page=%d", 
-                            $savedFrameId, $savedMcid ?? -1, $savedPdfTag, $pageNumber));
                     $onBDCOpened($savedFrameId, $savedMcid, $savedPdfTag, $pageNumber);
                 }
+                
+                // Capture for tree log
+                $frameId = $savedFrameId;
+                $mcid = $savedMcid;
+                $pdfTag = $savedPdfTag;
                 break;
                 
             case DrawingDecision::CONTINUE:
                 // Just draw (already in artifact)
-                SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-                    "Continuing in existing Artifact");
                 $output .= $contentRenderer();
                 break;
                 
             case DrawingDecision::ARTIFACT:
                 // Wrap as artifact
-                SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-                    "Wrapping as new Artifact");
                 $output .= TagOps::artifactOpen();
                 $stateManager->openArtifactBDC();
                 
@@ -182,8 +162,15 @@ class DrawingProcessor implements ContentProcessor
                 break;
         }
         
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-            sprintf("Execution complete, output length=%s \n <-------", $output));
+        // Single tree log at the end
+        TreeLogger::logDrawingOperation(
+            $decision->name,
+            $frameId,
+            $pdfTag,
+            $mcid,
+            $stateManager->getCurrentPage(),
+            $output
+        );
         
         return $output;
     }

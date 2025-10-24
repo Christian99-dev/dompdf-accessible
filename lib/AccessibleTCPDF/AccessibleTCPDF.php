@@ -467,7 +467,6 @@ class AccessibleTCPDF extends TCPDF
             
             $familyLower = strtolower($family);
             if (isset($fontMap[$familyLower])) {
-                error_log("[PDF/UA Font Mapping] $family → {$fontMap[$familyLower]}");
                 $family = $fontMap[$familyLower];
             }
         }

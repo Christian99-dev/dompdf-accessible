@@ -17,14 +17,12 @@
  */
 
 use Dompdf\SemanticTree;
-use Dompdf\SimpleLogger;
 
 require_once __DIR__ . '/ContentProcessor.php';
 require_once __DIR__ . '/TextDecision.php';
 require_once __DIR__ . '/TagOps.php';
 require_once __DIR__ . '/TaggingStateManager.php';
-require_once __DIR__ . '/../../../src/SimpleLogger.php';
-require_once __DIR__ . '/ContentProcessor.php';
+require_once __DIR__ . '/TreeLogger.php';
 
 class TextProcessor implements ContentProcessor
 {
@@ -65,15 +63,8 @@ class TextProcessor implements ContentProcessor
         TaggingStateManager $stateManager,
         SemanticTree $semanticTree
     ): TextDecision {
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-            sprintf("Analyzing: frameId=%s, hasSemanticState=%s, activeFrameId=%s ------------->", 
-                $frameId ?? 'null',
-                $stateManager->hasSemanticState() ? 'true' : 'false',
-                $stateManager->getActiveSemanticFrameId() ?? 'null'));
-        
         // No frame ID → Artifact
         if ($frameId === null) {
-            SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, "Decision: ARTIFACT (no frameId)");
             return TextDecision::ARTIFACT;
         }
         
@@ -82,22 +73,16 @@ class TextProcessor implements ContentProcessor
         
         // Node not found → Artifact
         if ($node === null) {
-            SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-                sprintf("Decision: ARTIFACT (node not found for frameId=%s)", $frameId));
             return TextDecision::ARTIFACT;
         }
         
         // Same frame as active? → Continue (Transparent)
         $activeFrameId = $stateManager->getActiveSemanticFrameId();
         if ($activeFrameId === $frameId) {
-            SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, "Decision: CONTINUE (same frameId)");
             return TextDecision::CONTINUE;
         }
         
         // Different frame → Open new semantic BDC
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-            sprintf("Decision: OPEN_NEW (different frameId, was=%s, now=%s)", 
-                $activeFrameId ?? 'null', $frameId));
         return TextDecision::OPEN_NEW;
     }
     
@@ -125,10 +110,9 @@ class TextProcessor implements ContentProcessor
         callable $contentRenderer,
         ?callable $onBDCOpened = null
     ): string {
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-            sprintf("Executing: decision=%s, frameId=%s", $decision->name, $frameId ?? 'null'));
-        
         $output = '';
+        $pdfTag = null;
+        $mcid = null;
         
         switch ($decision) {
             case TextDecision::OPEN_NEW:
@@ -138,8 +122,6 @@ class TextProcessor implements ContentProcessor
                 
                 // Close existing BDC if open
                 if ($stateManager->hasSemanticState()) {
-                    SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-                        "Closing previous Semantic BDC before opening new one");
                     $output .= TagOps::emc();
                     $stateManager->closeSemanticBDC();
                 }
@@ -149,38 +131,24 @@ class TextProcessor implements ContentProcessor
                 $output .= TagOps::bdcOpen($pdfTag, $mcid);
                 $stateManager->openSemanticBDC($frameId, $mcid);
                 
-                SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-                    sprintf("Opened new Semantic BDC: tag=%s, mcid=%d, frameId=%s", 
-                        $pdfTag, $mcid, $frameId));
-                
                 // CALLBACK: Notify that BDC was opened
                 if ($onBDCOpened !== null) {
                     $pageNumber = $stateManager->getCurrentPage();
-                    SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-                        sprintf("Calling onBDCOpened callback: frameId=%s, mcid=%d, tag=%s, page=%d", 
-                            $frameId, $mcid, $pdfTag, $pageNumber));
                     $onBDCOpened($frameId, $mcid, $pdfTag, $pageNumber);
                 }
                 
                 // Render content
                 $output .= $contentRenderer();
-                
-                // Keep BDC open for next call (important!)
-                SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-                    "Content rendered, keeping BDC open");
                 break;
                 
             case TextDecision::CONTINUE:
                 // Just render (BDC already open)
-                SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-                    "Continuing in existing BDC");
                 $output .= $contentRenderer();
+                $mcid = $stateManager->getActiveSemanticMCID();
                 break;
                 
             case TextDecision::ARTIFACT:
                 // Wrap as artifact
-                SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-                    "Wrapping as Artifact");
                 $output .= TagOps::artifactOpen();
                 $stateManager->openArtifactBDC();
                 
@@ -191,9 +159,15 @@ class TextProcessor implements ContentProcessor
                 break;
         }
         
-        SimpleLogger::log("pdf_backend_tagging_logs", __METHOD__, 
-            sprintf("Execution complete, output length=%s \n <-------", $output));
-
+        // Single tree log at the end
+        TreeLogger::logTextOperation(
+            $decision->name,
+            $frameId,
+            $pdfTag,
+            $mcid,
+            $stateManager->getCurrentPage(),
+            $output
+        );
 
         return $output;
     }

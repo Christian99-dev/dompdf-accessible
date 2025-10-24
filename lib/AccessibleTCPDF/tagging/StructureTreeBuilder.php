@@ -66,7 +66,7 @@ class StructureTreeBuilder
             'semantic' => $node
         ];
         
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+        SimpleLogger::log("pdf_backend_structure_tree_logs", __METHOD__, 
             sprintf("Registered MCID %d on page %d for element %d (%s)", 
                 $mcid, $page, $node->id, $node->getPdfStructureTag())
         );
@@ -135,7 +135,7 @@ class StructureTreeBuilder
             }
         }
         
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+        SimpleLogger::log("pdf_backend_structure_tree_logs", __METHOD__, 
             sprintf("Collected %d semantic elements (including containers)", count($allSemanticElements))
         );
         
@@ -177,7 +177,7 @@ class StructureTreeBuilder
         $documentObjId = ++$nextN;
         $structTreeRootObjId = ++$nextN;
         
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+        SimpleLogger::log("pdf_backend_structure_tree_logs", __METHOD__, 
             sprintf("Calculated ObjIDs: %d StructElems, Document=%d, StructTreeRoot=%d", 
                 count($allSemanticElements), $documentObjId, $structTreeRootObjId)
         );
@@ -318,7 +318,7 @@ class StructureTreeBuilder
             
             $strings[] = $out;
             
-            SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+            SimpleLogger::log("pdf_backend_structure_tree_logs", __METHOD__, 
                 sprintf("Built StructElem string for obj %d: /%s (frame %d, parent obj %d)", 
                     $objId, $pdfTag, $semantic->id, $parentObjId)
             );
@@ -357,7 +357,7 @@ class StructureTreeBuilder
         // Links are also top-level
         $topLevelObjIds = array_merge($topLevelObjIds, $linkStructElemObjIds);
         
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+        SimpleLogger::log("pdf_backend_structure_tree_logs", __METHOD__, 
             sprintf("Document /K will reference %d top-level StructElems", count($topLevelObjIds))
         );
         
@@ -412,7 +412,7 @@ class StructureTreeBuilder
         $out .= "\n".'endobj';
         $strings[] = $out;
         
-        SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
+        SimpleLogger::log("pdf_backend_structure_tree_logs", __METHOD__, 
             sprintf("Generated %d PDF object strings", count($strings))
         );
 
