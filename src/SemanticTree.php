@@ -161,30 +161,6 @@ class SemanticNode
     }
     
     /**
-     * Get only semantic children (filters out #text, #comment, decorative elements)
-     * 
-     * This is useful for PDF structure tree generation where we only want
-     * children that will have their own StructElem object.
-     * 
-     * Returns only children that:
-     * - Are NOT #text or #comment nodes
-     * - Are NOT decorative (aria-hidden, role=presentation)
-     * 
-     * @return SemanticNode[]
-     */
-    public function getSemanticChildren(): array
-    {
-        return array_filter(
-            $this->children,
-            fn($child) => 
-                // Exclude text and comment nodes
-                !in_array($child->tag, ['#text', '#comment'])
-                // Exclude decorative elements (aria-hidden, role=presentation)
-                && !$child->isDecorative()
-        );
-    }
-    
-    /**
      * Check if node has children
      * 
      * @return bool
@@ -192,16 +168,6 @@ class SemanticNode
     public function hasChildren(): bool
     {
         return count($this->children) > 0;
-    }
-    
-    /**
-     * Check if node has semantic children (excluding #text, decorative, etc.)
-     * 
-     * @return bool
-     */
-    public function hasSemanticChildren(): bool
-    {
-        return count($this->getSemanticChildren()) > 0;
     }
     
     /**
