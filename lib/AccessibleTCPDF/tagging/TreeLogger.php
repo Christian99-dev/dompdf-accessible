@@ -122,9 +122,13 @@ class TreeLogger
     ): string {
         $icon = self::getDecisionIcon($decision);
         $frameShort = $frameId ? self::shortenFrameId($frameId) : 'none';
+        $nodeShort = isset($context['nodeId']) ? self::shortenFrameId($context['nodeId']) : null;
         
-        // Main line: 🟢 TEXT [OPEN_NEW] frame=text_123 → /P (MCID=5)
+        // Main line: 🟢 TEXT [OPEN_NEW] frame=text_123 node=p_5 → /P (MCID=5)
         $mainLine = "{$icon} TEXT [{$decision}] frame={$frameShort}";
+        if ($nodeShort !== null) {
+            $mainLine .= " node={$nodeShort}";
+        }
         if ($pdfTag !== null) {
             $mainLine .= " → {$pdfTag}";
             if ($mcid !== null) {
@@ -162,9 +166,13 @@ class TreeLogger
     ): string {
         $icon = self::getDecisionIcon($decision);
         $type = $context['type'] ?? 'unknown';
+        $nodeShort = isset($context['nodeId']) ? self::shortenFrameId($context['nodeId']) : null;
         
-        // Main line: 🟠 DRAW [INTERRUPT] border → /P (MCID=5)
+        // Main line: 🟠 DRAW [INTERRUPT] border node=p_5 → /P (MCID=5)
         $mainLine = "{$icon} DRAW [{$decision}] {$type}";
+        if ($nodeShort !== null) {
+            $mainLine .= " node={$nodeShort}";
+        }
         if ($decision === 'INTERRUPT' && $pdfTag !== null) {
             $mainLine .= " → {$pdfTag}";
             if ($mcid !== null) {
