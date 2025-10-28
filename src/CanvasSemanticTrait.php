@@ -40,9 +40,6 @@ trait CanvasSemanticTrait
      *
      * This is called during rendering to track which node is being processed.
      * 
-     * CRITICAL: For #text nodes and other non-semantic elements, we find the
-     * semantic parent (P, Div, H1, etc.) using findContentContainerParent().
-     * 
      * @param string|null $frameId The frame ID being rendered (null = clear)
      */
     public function setCurrentFrameId(?string $frameId): void
@@ -60,15 +57,9 @@ trait CanvasSemanticTrait
             return;
         }
         
-        // Find the semantic content container parent
-        $semanticParent = $this->_semantic_tree->findContentContainerParent($frameId);
-        
-        // Use the parent's ID if found, otherwise use original frameId
-        $semanticFrameId = $semanticParent ? $semanticParent->id : $frameId;
-        
         // Tunnel to PDF backend
         if (method_exists($this->_pdf, 'setCurrentFrameId')) {
-            $this->_pdf->setCurrentFrameId($semanticFrameId);
+            $this->_pdf->setCurrentFrameId($frameId);
         }
     }
 
