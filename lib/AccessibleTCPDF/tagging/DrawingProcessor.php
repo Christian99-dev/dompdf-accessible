@@ -103,6 +103,7 @@ class DrawingProcessor implements ContentProcessor
         $pdfTag = null;
         $mcid = null;
         $frameId = null;
+        $nodeId = null;  // For logging: actual semantic node ID
         
         switch ($decision) {
             case DrawingDecision::INTERRUPT:
@@ -143,6 +144,7 @@ class DrawingProcessor implements ContentProcessor
                 $frameId = $savedFrameId;
                 $mcid = $savedMcid;
                 $pdfTag = $savedPdfTag;
+                $nodeId = $savedFrameId;  // Node ID same as frame ID for INTERRUPT
                 break;
                 
             case DrawingDecision::CONTINUE:
@@ -169,7 +171,8 @@ class DrawingProcessor implements ContentProcessor
             $pdfTag,
             $mcid,
             $stateManager->getCurrentPage(),
-            $output
+            $output,
+            ['nodeId' => $nodeId]  // Add actual node ID to context
         );
         
         return $output;

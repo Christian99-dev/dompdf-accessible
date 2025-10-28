@@ -113,12 +113,14 @@ class TextProcessor implements ContentProcessor
         $output = '';
         $pdfTag = null;
         $mcid = null;
+        $nodeId = null;  // For logging: actual semantic node ID
         
         switch ($decision) {
             case TextDecision::OPEN_NEW:
                 // Get node (we know it exists from analyze)
                 $node = $semanticTree->getNodeById($frameId);
                 $pdfTag = $node->getPdfStructureTag();
+                $nodeId = $node->id;  // Store for logging
                 
                 // Close existing BDC if open
                 if ($stateManager->getState() === TaggingState::SEMANTIC) {
@@ -145,6 +147,7 @@ class TextProcessor implements ContentProcessor
                 // Just render (BDC already open)
                 $output .= $contentRenderer();
                 $mcid = $stateManager->getActiveSemanticMCID();
+                $nodeId = $stateManager->getActiveSemanticFrameId();  // Current node
                 break;
                 
             case TextDecision::ARTIFACT:
@@ -166,7 +169,8 @@ class TextProcessor implements ContentProcessor
             $pdfTag,
             $mcid,
             $stateManager->getCurrentPage(),
-            $output
+            $output,
+            ['nodeId' => $nodeId]  // Add actual node ID to context
         );
 
         return $output;
