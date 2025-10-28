@@ -121,7 +121,7 @@ class TextProcessor implements ContentProcessor
                 $pdfTag = $node->getPdfStructureTag();
                 
                 // Close existing BDC if open
-                if ($stateManager->hasSemanticState()) {
+                if ($stateManager->getState() === TaggingState::SEMANTIC) {
                     $output .= TagOps::emc();
                     $stateManager->closeSemanticBDC();
                 }

@@ -497,7 +497,7 @@ class AccessibleTCPDF extends TCPDF
      */
     protected function _endpage() {
         // PDF/UA FIX: Close any open BDC block BEFORE wrapping page-end graphics
-        if ($this->pdfua && $this->taggingStateManager->hasAnyTaggingState() && $this->page > 0 && $this->state == 2) {
+        if ($this->pdfua && $this->taggingStateManager->getState() !== TaggingState::NONE && $this->page > 0 && $this->state == 2) {
             $this->_out("\n" . $this->taggingStateManager->closeCurrentTag());
         }
         
@@ -766,7 +766,7 @@ class AccessibleTCPDF extends TCPDF
     //  */
     protected function setExtGState($gs) {
         // PDF/UA: Wrap ExtGState operations as Artifact if inside tagged content
-        if ($this->pdfua === false || $this->taggingStateManager->hasAnyTaggingState()) {
+        if ($this->pdfua === false || $this->taggingStateManager->getState() !== TaggingState::NONE) {
             parent::setExtGState($gs);
             return;
         }
@@ -785,7 +785,7 @@ class AccessibleTCPDF extends TCPDF
      */
     public function StartTransform() {
         // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
-        if ($this->pdfua && $this->taggingStateManager->hasAnyTaggingState()) {
+        if ($this->pdfua && $this->taggingStateManager->getState() !== TaggingState::NONE) {
             // Track transform matrix but don't output 'q'
             if ($this->state != 2) {
                 return;
@@ -808,7 +808,7 @@ class AccessibleTCPDF extends TCPDF
      */
     public function StopTransform() {
         // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
-        if ($this->pdfua && $this->taggingStateManager->hasAnyTaggingState()) {
+        if ($this->pdfua && $this->taggingStateManager->getState() !== TaggingState::NONE) {
             // Restore transform matrix but don't output 'Q'
             if ($this->state != 2) {
                 return;
@@ -837,7 +837,7 @@ class AccessibleTCPDF extends TCPDF
      */
     protected function _outSaveGraphicsState() {
         // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'q'
-        if ($this->pdfua && $this->taggingStateManager->hasAnyTaggingState()) {
+        if ($this->pdfua && $this->taggingStateManager->getState() !== TaggingState::NONE) {
             return; // Suppress 'q' output
         }
         
@@ -851,7 +851,7 @@ class AccessibleTCPDF extends TCPDF
     //  */
     protected function _outRestoreGraphicsState() {
         // PDF/UA FIX: SUPPRESS when inside BDC to avoid untagged 'Q'
-        if ($this->pdfua && $this->taggingStateManager->hasAnyTaggingState()) {
+        if ($this->pdfua && $this->taggingStateManager->getState() !== TaggingState::NONE) {
             return; // Suppress 'Q' output
         }
         
@@ -865,7 +865,7 @@ class AccessibleTCPDF extends TCPDF
     protected function _putresources()
     {
         // CRITICAL: Close any open BDC block before finalizing the document
-        if ($this->pdfua && $this->taggingStateManager->hasAnyTaggingState()) {
+        if ($this->pdfua && $this->taggingStateManager->getState() !== TaggingState::NONE) {
             // Inject EMC into the current page buffer
             if ($this->state == 2 && isset($this->page)) {
                 $this->setPageBuffer($this->page, $this->taggingStateManager->closeCurrentTag(), true);

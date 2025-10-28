@@ -64,12 +64,12 @@ class DrawingProcessor implements ContentProcessor
         SemanticTree $semanticTree
     ): DrawingDecision {
         // Semantic BDC open? → Need interruption
-        if ($stateManager->hasSemanticState()) {
+        if ($stateManager->getState() === TaggingState::SEMANTIC) {
             return DrawingDecision::INTERRUPT;
         }
         
         // Artifact BDC open? → Just draw
-        if ($stateManager->hasArtifactState()) {
+        if ($stateManager->getState() === TaggingState::ARTIFACT) {
             return DrawingDecision::CONTINUE;
         }
         

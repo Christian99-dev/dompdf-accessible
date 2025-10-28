@@ -26,10 +26,18 @@
 use Dompdf\SimpleLogger;
 
 require_once __DIR__ . '/TagOps.php';
+require_once __DIR__ . '/TaggingState.php';
 require_once __DIR__ . '/../../../src/SimpleLogger.php';
 
 class TaggingStateManager
 {
+    /**
+     * Current tagging state (NONE, SEMANTIC, or ARTIFACT)
+     * Replaces two boolean flags for better type-safety
+     * @var TaggingState
+     */
+    private TaggingState $state = TaggingState::NONE;
+    
     /**
      * Currently active semantic BDC frame ID
      * null = No semantic BDC is open
@@ -43,12 +51,6 @@ class TaggingStateManager
      * @var int|null
      */
     private ?int $activeSemanticMCID = null;
-    
-    /**
-     * Are we currently inside an Artifact BDC?
-     * @var bool
-     */
-    private bool $isInArtifact = false;
     
     /**
      * Current MCID (Marked Content ID) counter
@@ -65,23 +67,22 @@ class TaggingStateManager
     private int $currentPage = 0;
     
     // ========================================================================
-    // SEMANTIC STATE METHODS
+    // STATE ACCESS
     // ========================================================================
     
     /**
-     * Check if we are currently inside a semantic tagged content block
+     * Get current tagging state
      * 
-     * Use this to decide:
-     * - Should we open a new semantic BDC? (if false)
-     * - Do we need to close semantic BDC before Artifact? (if true)
-     * - Should we re-open semantic BDC after Artifact? (if true)
-     * 
-     * @return bool True if semantic BDC is currently open
+     * @return TaggingState Current state (NONE, SEMANTIC, or ARTIFACT)
      */
-    public function hasSemanticState(): bool
+    public function getState(): TaggingState
     {
-        return $this->activeSemanticFrameId !== null;
+        return $this->state;
     }
+    
+    // ========================================================================
+    // SEMANTIC STATE METHODS
+    // ========================================================================
     
     /**
      * Get the currently active semantic BDC frame ID
@@ -120,16 +121,10 @@ class TaggingStateManager
     public function openSemanticBDC(string $frameId, int $mcid): void
     {
         SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
-            sprintf("Opening Semantic BDC: frameId=%s, mcid=%d, wasInArtifact=%s", 
-                $frameId, $mcid, $this->isInArtifact ? 'true' : 'false'));
+            sprintf("Opening Semantic BDC: frameId=%s, mcid=%d, previousState=%s", 
+                $frameId, $mcid, $this->state->name));
         
-        // Enforce mutual exclusion
-        if ($this->isInArtifact) {
-            SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
-                "Auto-closing Artifact to enforce mutual exclusion");
-            $this->isInArtifact = false;
-        }
-        
+        $this->state = TaggingState::SEMANTIC;
         $this->activeSemanticFrameId = $frameId;
         $this->activeSemanticMCID = $mcid;
     }
@@ -146,6 +141,7 @@ class TaggingStateManager
                 $this->activeSemanticFrameId ?? 'null',
                 $this->activeSemanticMCID !== null ? (string)$this->activeSemanticMCID : 'null'));
         
+        $this->state = TaggingState::NONE;
         $this->activeSemanticFrameId = null;
         $this->activeSemanticMCID = null;
     }
@@ -153,20 +149,6 @@ class TaggingStateManager
     // ========================================================================
     // ARTIFACT STATE METHODS
     // ========================================================================
-    
-    /**
-     * Check if we are currently inside an Artifact BDC block
-     * 
-     * Use this to prevent nested Artifacts:
-     * - Don't open Artifact if already in one
-     * - Don't open Artifact if semantic BDC is open (close it first)
-     * 
-     * @return bool True if Artifact BDC is currently open
-     */
-    public function hasArtifactState(): bool
-    {
-        return $this->isInArtifact;
-    }
     
     /**
      * Open an Artifact BDC block
@@ -179,18 +161,11 @@ class TaggingStateManager
     public function openArtifactBDC(): void
     {
         SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
-            sprintf("Opening Artifact BDC: wasInSemantic=%s (frameId=%s)", 
-                $this->activeSemanticFrameId !== null ? 'true' : 'false',
+            sprintf("Opening Artifact BDC: previousState=%s (frameId=%s)", 
+                $this->state->name,
                 $this->activeSemanticFrameId ?? 'null'));
         
-        // Enforce mutual exclusion
-        if ($this->activeSemanticFrameId !== null) {
-            SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
-                "Auto-closing Semantic to enforce mutual exclusion");
-            $this->activeSemanticFrameId = null;
-        }
-        
-        $this->isInArtifact = true;
+        $this->state = TaggingState::ARTIFACT;
     }
     
     /**
@@ -201,26 +176,12 @@ class TaggingStateManager
     public function closeArtifactBDC(): void
     {
         SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, "Closing Artifact BDC");
-        $this->isInArtifact = false;
+        $this->state = TaggingState::NONE;
     }
     
     // ========================================================================
     // COMBINED STATE QUERIES
     // ========================================================================
-    
-    /**
-     * Check if ANY BDC block is currently open (semantic OR artifact)
-     * 
-     * Use this for:
-     * - Transform operations (q/Q suppression if ANY BDC is open)
-     * - Font operations (suppression if ANY BDC is open)
-     * 
-     * @return bool True if any BDC is currently open
-     */
-    public function hasAnyTaggingState(): bool
-    {
-        return $this->hasSemanticState() || $this->hasArtifactState();
-    }
     
     /**
      * Close all open tagging states and return EMC operators
@@ -235,20 +196,18 @@ class TaggingStateManager
     public function closeCurrentTag(): string
     {
         SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
-            sprintf("Closing all states: hasSemantic=%s, hasArtifact=%s", 
-                $this->hasSemanticState() ? 'true' : 'false',
-                $this->hasArtifactState() ? 'true' : 'false'));
+            sprintf("Closing all states: state=%s", $this->state->name));
         
         $output = '';
         
         // Close semantic state if open
-        if ($this->hasSemanticState()) {
+        if ($this->state === TaggingState::SEMANTIC) {
             $output .= TagOps::emc();
             $this->closeSemanticBDC();
         }
         
         // Close artifact state if open
-        if ($this->hasArtifactState()) {
+        if ($this->state === TaggingState::ARTIFACT) {
             $output .= TagOps::artifactClose();
             $this->closeArtifactBDC();
         }
@@ -349,11 +308,8 @@ class TaggingStateManager
     public function getDebugInfo(): array
     {
         return [
-            'hasSemanticState' => $this->hasSemanticState(),
-            'hasArtifactState' => $this->hasArtifactState(),
-            'hasAnyTaggingState' => $this->hasAnyTaggingState(),
+            'state' => $this->state->name,
             'activeSemanticFrameId' => $this->activeSemanticFrameId,
-            'isInArtifact' => $this->isInArtifact,
             'mcidCounter' => $this->mcidCounter
         ];
     }
@@ -368,7 +324,7 @@ class TaggingStateManager
      */
     public function validateState(): bool
     {
-        if ($this->hasSemanticState() && $this->hasArtifactState()) {
+        if ($this->state === TaggingState::SEMANTIC && $this->state === TaggingState::ARTIFACT) {
             throw new \LogicException(
                 'INVALID STATE: Both semantic and artifact BDC are open! ' .
                 'Frame ID: ' . $this->activeSemanticFrameId
