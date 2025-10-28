@@ -51,7 +51,7 @@ class TextProcessor implements ContentProcessor
      * Determines what action to take based on:
      * - Frame ID presence
      * - Semantic node existence
-     * - Current state (is same frame active?)
+     * - Current state (is BDC open?)
      * 
      * @param string|null $frameId Current frame ID
      * @param TaggingStateManager $stateManager State manager
@@ -79,7 +79,22 @@ class TextProcessor implements ContentProcessor
             return TextDecision::CONTINUE;
         }
         
-        // Different frame → Open new semantic BDC
+        /* --  Node found **/
+
+        // Here we can ask anything now
+        // Are we inside an artefact or a tag ?
+        // Are we we an artefact/inlinetag or tag itself
+        // node->isArtifact
+        // node->isInlineTag
+        // stateManger == TaggingState::Semantic or none or whatevery 
+        // everything is possible ~ ~ ~ ~ 
+
+        // New Frame but theres still an open BDC
+        if($stateManager->getState() === TaggingState::SEMANTIC) {
+            return TextDecision::CLOSE_AND_OPEN_NEW;  // BDC offen → schließen + öffnen
+        }
+
+        // New Frame and no BDC open, Problem the first frame in document
         return TextDecision::OPEN_NEW;
     }
     
@@ -87,7 +102,8 @@ class TextProcessor implements ContentProcessor
      * PHASE 2: Execute text rendering with tagging
      * 
      * Actions based on decision:
-     * - OPEN_NEW: Close old BDC (if any) → Open new BDC → Render → Keep open
+     * - OPEN_NEW: Open new BDC → Render → Keep open
+     * - CLOSE_AND_OPEN_NEW: Close old BDC → Open new BDC → Render → Keep open
      * - CONTINUE: Just render (BDC already open)
      * - ARTIFACT: Wrap in /Artifact BMC ... EMC
      * 
@@ -119,11 +135,30 @@ class TextProcessor implements ContentProcessor
                 $pdfTag = $node->getPdfStructureTag();
                 $nodeId = $node->id;  // Store for logging
                 
-                // Close existing BDC if open
-                if ($stateManager->getState() === TaggingState::SEMANTIC) {
-                    $output .= TagOps::emc();
-                    $stateManager->closeSemanticBDC();
+                // Open new semantic BDC (no closing needed)
+                $mcid = $stateManager->getNextMCID();
+                $output .= TagOps::bdcOpen($pdfTag, $mcid);
+                $stateManager->openSemanticBDC($frameId, $mcid);
+                
+                // CALLBACK: Notify that BDC was opened
+                if ($onBDCOpened !== null) {
+                    $pageNumber = $stateManager->getCurrentPage();
+                    $onBDCOpened($frameId, $mcid, $pdfTag, $pageNumber);
                 }
+                
+                // Render content
+                $output .= $contentRenderer();
+                break;
+            
+            case TextDecision::CLOSE_AND_OPEN_NEW:
+                // Get node (we know it exists from analyze)
+                $node = $semanticTree->getNodeById($frameId);
+                $pdfTag = $node->getPdfStructureTag();
+                $nodeId = $node->id;  // Store for logging
+                
+                // Close existing BDC first
+                $output .= TagOps::emc();
+                $stateManager->closeSemanticBDC();
                 
                 // Open new semantic BDC
                 $mcid = $stateManager->getNextMCID();

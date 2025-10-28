@@ -218,6 +218,7 @@ class TreeLogger
     {
         return match($decision) {
             'OPEN_NEW' => '🟢',
+            'CLOSE_AND_OPEN_NEW' => '🟢',
             'CONTINUE' => '🔵',
             'ARTIFACT' => '🟡',
             'INTERRUPT' => '🟠',

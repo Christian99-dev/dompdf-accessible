@@ -12,13 +12,24 @@
 enum TextDecision
 {
     /**
-     * Open new semantic BDC
+     * Open new semantic BDC (no BDC currently open)
+     * 
+     * Used when:
+     * - New frame ID
+     * - No semantic BDC is currently open
+     * - Just open new BDC without closing
+     */
+    case OPEN_NEW;
+    
+    /**
+     * Close current BDC and open new one
      * 
      * Used when:
      * - New frame ID (different from active)
-     * - Need to close old BDC and open new one
+     * - A semantic BDC is currently open
+     * - Need to close old BDC before opening new one
      */
-    case OPEN_NEW;
+    case CLOSE_AND_OPEN_NEW;
     
     /**
      * Continue existing BDC (transparent)
