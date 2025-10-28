@@ -67,12 +67,6 @@ class SemanticNode
      */
     private array $children = [];
     
-    /**
-     * Cached depth in tree (calculated once, then cached)
-     * @var int|null
-     */
-    private ?int $cachedDepth = null;
-    
     // ========================================================================
     // CONSTRUCTOR
     // ========================================================================
@@ -113,8 +107,6 @@ class SemanticNode
     public function setParent(?SemanticNode $parent): void
     {
         $this->parent = $parent;
-        // Invalidate cached depth when parent changes
-        $this->cachedDepth = null;
     }
     
     /**
@@ -171,19 +163,18 @@ class SemanticNode
     }
     
     /**
-     * Get depth in tree with caching (O(1) after first calculation!)
+     * Get depth in tree (pure calculation, no caching)
      * 
      * Root elements (no parent) have depth 0, their children have depth 1, etc.
+     * 
+     * Note: This is only used for debug output, so performance is not critical.
+     * If this becomes a bottleneck, consider adding depth as a readonly property
+     * calculated once during tree construction.
      * 
      * @return int Depth in tree (0 = root, 1 = child, 2 = grandchild, etc.)
      */
     public function getDepth(): int
     {
-        // Return cached depth if available
-        if ($this->cachedDepth !== null) {
-            return $this->cachedDepth;
-        }
-        
         // Calculate depth by walking up parent chain
         $depth = 0;
         $current = $this;
@@ -200,9 +191,6 @@ class SemanticNode
                 break;
             }
         }
-        
-        // Cache the result
-        $this->cachedDepth = $depth;
         
         return $depth;
     }
