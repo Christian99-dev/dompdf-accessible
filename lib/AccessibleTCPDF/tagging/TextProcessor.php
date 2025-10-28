@@ -63,22 +63,19 @@ class TextProcessor implements ContentProcessor
         TaggingStateManager $stateManager,
         SemanticTree $semanticTree
     ): TextDecision {
-        // No frame ID → Artifact
+
+        // EDGE CASE 1: (Doc in ContentProcessor.php)
+        // Meaning: Dynamically generated Frame WITHOUT setting a frame context
         if ($frameId === null) {
             return TextDecision::ARTIFACT;
         }
         
         // Get semantic node
         $node = $semanticTree->getNodeById($frameId);
-        
-        // Node not found → Artifact
+
+        // EDGE CASE 2: (Doc in ContentProcessor.php)
+        // Meaning: Dynamically generated content WITH a Frame object
         if ($node === null) {
-            return TextDecision::ARTIFACT;
-        }
-        
-        // Same frame as active? → Continue (Transparent)
-        $activeFrameId = $stateManager->getActiveSemanticFrameId();
-        if ($activeFrameId === $frameId) {
             return TextDecision::CONTINUE;
         }
         
