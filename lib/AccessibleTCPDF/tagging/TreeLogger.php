@@ -272,6 +272,8 @@ class TreeLogger
         return match($decision) {
             'OPEN_NEW' => '🟢',
             'CLOSE_AND_OPEN_NEW' => '🟢',
+            'OPEN_WITH_PARENT_INFO' => '🟢',
+            'CLOSE_AND_OPEN_WITH_PARENT_INFO' => '🟢',
             'CONTINUE' => '🔵',
             'ARTIFACT' => '🟡',
             'CLOSE_BDC_ARTIFACT_REOPEN' => '🟠',

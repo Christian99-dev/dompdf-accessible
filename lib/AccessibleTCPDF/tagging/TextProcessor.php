@@ -73,14 +73,27 @@ class TextProcessor implements ContentProcessor
         // Get semantic node
         $node = $semanticTree->getNodeById($frameId);
 
+        
         // EDGE CASE 2: (Doc in ContentProcessor.php)
         // Meaning: Dynamically generated content WITH a Frame object
-        if ($node === null) {
+        // Text splits etc.
+        if ($node === null) {                
             return TextDecision::CONTINUE;
         }
-        
+
         /* --  Node found **/
 
+        // Special Node cases: #text node
+        if($node->tag == "#text") {
+
+            if($stateManager->getState() !== TaggingState::NONE) {
+                return TextDecision::CLOSE_AND_OPEN_WITH_PARENT_INFO;
+            }
+    
+            return TextDecision::OPEN_WITH_PARENT_INFO;
+        }
+        
+        // General cases:
         // Here we can ask anything now
         // Are we inside an artefact or a tag ?
         // Are we we an artefact/inlinetag or tag itself
@@ -132,6 +145,12 @@ class TextProcessor implements ContentProcessor
         $stateBeforeOperation = $stateManager->getState();
         
         switch ($decision) {
+
+            case TextDecision::CLOSE_AND_OPEN_NEW:                
+                // Close existing BDC first
+                $output .= TagOps::emc();
+                $stateManager->closeSemanticBDC();
+                
             case TextDecision::OPEN_NEW:
                 // Get node (we know it exists from analyze)
                 $node = $semanticTree->getNodeById($frameId);
@@ -153,17 +172,19 @@ class TextProcessor implements ContentProcessor
                 $output .= $contentRenderer();
                 break;
             
-            case TextDecision::CLOSE_AND_OPEN_NEW:
-                // Get node (we know it exists from analyze)
-                $node = $semanticTree->getNodeById($frameId);
-                $pdfTag = $node->getPdfStructureTag();
-                $nodeId = $node->id;  // Store for logging
-                
+            case TextDecision::CLOSE_AND_OPEN_WITH_PARENT_INFO:
                 // Close existing BDC first
                 $output .= TagOps::emc();
                 $stateManager->closeSemanticBDC();
-                
-                // Open new semantic BDC
+
+            case TextDecision::OPEN_WITH_PARENT_INFO:
+                // Get node (we know it exists from analyze)
+                $node = $semanticTree->getNodeById($frameId);
+                $parentNode = $node->getParent();
+                $pdfTag = $parentNode->getPdfStructureTag();
+                $nodeId = $parentNode->id;  // Store for logging
+
+                // Open new semantic BDC (no closing needed)
                 $mcid = $stateManager->getNextMCID();
                 $output .= TagOps::bdcOpen($pdfTag, $mcid);
                 $stateManager->openSemanticBDC($frameId, $mcid);
@@ -171,7 +192,7 @@ class TextProcessor implements ContentProcessor
                 // CALLBACK: Notify that BDC was opened
                 if ($onBDCOpened !== null) {
                     $pageNumber = $stateManager->getCurrentPage();
-                    $onBDCOpened($frameId, $mcid, $pdfTag, $pageNumber);
+                    $onBDCOpened($nodeId, $mcid, $pdfTag, $pageNumber);
                 }
                 
                 // Render content

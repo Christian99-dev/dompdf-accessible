@@ -56,4 +56,14 @@ enum TextDecision
      * - Edge case where no action is needed
      */
     case OPEN_WITH_PARENT_INFO;
+    /**
+     * Close current BDC and open new one with parent info
+     * 
+     * Used when:
+     * - New frame ID (different from active)
+     * - A semantic BDC is currently open
+     * - Need to close old BDC before opening new one
+     * - Need to use PARENT's info for structure tree
+     */
+    case CLOSE_AND_OPEN_WITH_PARENT_INFO;
 }
