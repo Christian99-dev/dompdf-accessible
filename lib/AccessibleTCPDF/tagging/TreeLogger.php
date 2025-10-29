@@ -274,7 +274,7 @@ class TreeLogger
             'CLOSE_AND_OPEN_NEW' => '🟢',
             'CONTINUE' => '🔵',
             'ARTIFACT' => '🟡',
-            'INTERRUPT' => '🟠',
+            'CLOSE_BDC_ARTIFACT_REOPEN' => '🟠',
             default => '⚪'
         };
     }
