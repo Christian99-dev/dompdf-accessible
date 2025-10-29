@@ -105,9 +105,6 @@ class TaggingStateManager
             sprintf("Opening Semantic BDC: frameId=%s, mcid=%d, previousState=%s", 
                 $frameId, $mcid, $this->state->name));
         
-        SimpleLogger::log("pdf_backend_state_manager_logs", "STACK_TRACE", 
-            implode("\n", array_slice(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS), 0, 5)));
-        
         $this->state = TaggingState::SEMANTIC;
         $this->activeSemanticMCID = $mcid;
     }
@@ -145,9 +142,6 @@ class TaggingStateManager
             sprintf("Opening Artifact BDC: previousState=%s (frameId=%s)", 
                 $this->state->name,
                 $this->activeSemanticFrameId ?? 'null'));
-        
-        SimpleLogger::log("pdf_backend_state_manager_logs", "STACK_TRACE", 
-            implode("\n", array_slice(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS), 0, 5)));
         
         $this->state = TaggingState::ARTIFACT;
     }
