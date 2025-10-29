@@ -147,12 +147,6 @@ class DrawingProcessor implements ContentProcessor
                 $output .= TagOps::bdcOpen($savedPdfTag, $savedMcid);
                 $stateManager->openSemanticBDC($savedFrameId, $savedMcid);
                 
-                // CALLBACK: Notify that BDC was re-opened (important for StructTree!)
-                if ($onBDCOpened !== null) {
-                    $pageNumber = $stateManager->getCurrentPage();
-                    $onBDCOpened($savedFrameId, $savedMcid, $savedPdfTag, $pageNumber);
-                }
-                
                 // Capture for tree log
                 $frameId = $savedFrameId;
                 $mcid = $savedMcid;
