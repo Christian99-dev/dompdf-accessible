@@ -16,10 +16,9 @@
  * 
  * CASE 1: frameId === null
  * ────────────────────────
- * Meaning: Dynamically generated content WITHOUT frame context
+ * Meaning: Dynamically generated content WITHOUT frame context, Renderer never calls setCurrentFrameId()
  * 
  * Trigger:
- * - Renderer never calls setCurrentFrameId()
  * 
  * ────────────────────────────────────────────────────────────────────────────
  * 
@@ -28,9 +27,10 @@
  * Meaning: Frame object exists, but was created DURING reflow (not in tree)
  * 
  * Trigger:
- * - Frame created AFTER registerAllSemanticElements() finished
- * - Frame has ID and DOM node, but not registered in SemanticTree
- * - Frame created through split() operations during layout
+ * -> Text splits
+ * -> Inline Element Splits
+ * -> Font Substitution Splits
+ * -> Table Cell Splits (Page Break)
  * ============================================================================
  * 
  * @package dompdf-accessible
