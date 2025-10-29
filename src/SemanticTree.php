@@ -130,6 +130,35 @@ class SemanticNode
     }
     
     /**
+     * Get nearest block-level ancestor (skipping transparent inline tags)
+     * 
+     * This method walks up the parent chain, skipping over transparent inline
+     * tags (strong, em, span, etc.) until it finds a block-level element or
+     * a semantic inline element like code.
+     * 
+     * Used for transparent inline tag handling: text inside <strong> should
+     * use the parent <p>'s PDF tag, not create a separate <Strong> StructElem.
+     * 
+     * @return SemanticNode|null The nearest block-level ancestor, or null if at root
+     */
+    public function getNearestBlockParent(): ?SemanticNode
+    {
+        $current = $this->parent;
+        
+        while ($current !== null) {
+            // Stop at block-level elements or semantic inline elements (code, etc.)
+            if (!$current->isTransparentInlineTag()) {
+                return $current;
+            }
+            
+            // Continue up the chain
+            $current = $current->parent;
+        }
+        
+        return null;
+    }
+    
+    /**
      * Add child node (internal, called by SemanticTree)
      * 
      * @param SemanticNode $child

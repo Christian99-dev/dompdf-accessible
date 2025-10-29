@@ -90,6 +90,7 @@ class TextProcessor implements ContentProcessor
         $currentState = $stateManager->getState();
         $hasDecorativeParent = $node->hasDecorativeParent();
         $isTextNode = $node->isTextNode();
+        $isTransparentInlineTag = $node->isTransparentInlineTag();
         
         // ========================================================================
         // STEP 3: STATE-BASED DECISION TREE
@@ -104,8 +105,8 @@ class TextProcessor implements ContentProcessor
                     return TextDecision::OPEN_ARTEFACT;
                 }
                 
-                if ($isTextNode) {
-                    // Text nodes use parent's tag
+                if ($isTextNode || $isTransparentInlineTag) {
+                    // Text nodes and transparent inline tags use parent's tag
                     return TextDecision::OPEN_WITH_PARENT_INFO;
                 }
                 
@@ -119,7 +120,8 @@ class TextProcessor implements ContentProcessor
                     return TextDecision::CLOSE_SEMANTIC_AND_OPEN_ARTEFACT;
                 }
                 
-                if ($isTextNode) {
+                if ($isTextNode || $isTransparentInlineTag) {
+                    // Text nodes and transparent inline tags use parent's tag
                     return TextDecision::CLOSE_AND_OPEN_WITH_PARENT_INFO;
                 }
                 
@@ -134,7 +136,8 @@ class TextProcessor implements ContentProcessor
                     return TextDecision::CONTINUE;
                 }
                 
-                if ($isTextNode) {
+                if ($isTextNode || $isTransparentInlineTag) {
+                    // Text nodes and transparent inline tags use parent's tag
                     return TextDecision::CLOSE_ARTEFACT_AND_OPEN_WITH_PARENT_INFO;
                 }
                 
@@ -217,7 +220,10 @@ class TextProcessor implements ContentProcessor
 
             case TextDecision::OPEN_WITH_PARENT_INFO:
                 // Get node (we know it exists from analyze)
-                $parentNode = $node->getParent();
+                // For transparent inline tags and #text nodes, skip to nearest block parent
+                $parentNode = $node->isTextNode() || $node->isTransparentInlineTag()
+                    ? $node->getNearestBlockParent()
+                    : $node->getParent();
                 $pdfTag = $parentNode->getPdfStructureTag();
 
                 // Open new semantic BDC (no closing needed)
@@ -288,7 +294,10 @@ class TextProcessor implements ContentProcessor
                 $stateManager->closeArtifactBDC();
                 
                 $node = $semanticTree->getNodeById($frameId);
-                $parentNode = $node->getParent();
+                // For transparent inline tags and #text nodes, skip to nearest block parent
+                $parentNode = $node->isTextNode() || $node->isTransparentInlineTag()
+                    ? $node->getNearestBlockParent()
+                    : $node->getParent();
                 $pdfTag = $parentNode->getPdfStructureTag();
                 $nodeId = $parentNode->id;
                 
