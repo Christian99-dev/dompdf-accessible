@@ -48,6 +48,16 @@ enum TextDecision
      * - Node not found in semantic tree
      */
     case ARTIFACT;
+    
+    /**
+     * Open Artifact BDC
+     * 
+     * Used when:
+     * - Node or parent has decorative role (role="presentation" or role="none")
+     * - Node or parent has aria-hidden="true"
+     * - Content should be marked as artifact but needs BDC opened first
+     */
+    case OPEN_ARTEFACT;
 
     /**
      * No operation (nothing to do)
@@ -66,4 +76,35 @@ enum TextDecision
      * - Need to use PARENT's info for structure tree
      */
     case CLOSE_AND_OPEN_WITH_PARENT_INFO;
+    
+    /**
+     * Close semantic BDC and open artifact
+     * 
+     * Used when:
+     * - Coming from SEMANTIC state
+     * - Node has decorative parent
+     * - Need to close semantic BDC and open artifact
+     */
+    case CLOSE_SEMANTIC_AND_OPEN_ARTEFACT;
+    
+    /**
+     * Close artifact and open semantic BDC
+     * 
+     * Used when:
+     * - Coming from ARTIFACT state
+     * - Node has NO decorative parent
+     * - Need to close artifact and open semantic BDC
+     */
+    case CLOSE_ARTEFACT_AND_OPEN_NEW;
+    
+    /**
+     * Close artifact and open semantic BDC with parent info
+     * 
+     * Used when:
+     * - Coming from ARTIFACT state
+     * - Node is text node
+     * - Node has NO decorative parent
+     * - Need to close artifact and open semantic BDC with parent info
+     */
+    case CLOSE_ARTEFACT_AND_OPEN_WITH_PARENT_INFO;
 }

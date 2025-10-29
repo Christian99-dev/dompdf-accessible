@@ -309,6 +309,39 @@ class SemanticNode
         
         return false;
     }
+    
+    /**
+     * Check if any parent (ancestor) is decorative
+     * 
+     * This walks up the tree and checks if any ancestor has decorative role.
+     * Used to determine if content should be wrapped as Artifact.
+     * 
+     * @return bool True if any parent is decorative
+     */
+    public function hasDecorativeParent(): bool
+    {
+        $current = $this->parent;
+        $depth = 0;
+        
+        while ($current !== null) {
+            if ($current->isDecorative()) {
+                return true;
+            }
+            
+            $current = $current->getParent();
+            $depth++;
+            
+            // Safety: prevent infinite loops
+            if ($depth > 100) {
+                SimpleLogger::log("semantic_tree_logs", __METHOD__, 
+                    "WARNING: Search depth exceeded 100 for node {$this->id}, breaking"
+                );
+                break;
+            }
+        }
+        
+        return false;
+    }
 
     /**
      * Check if element is a transparent inline styling tag

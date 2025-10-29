@@ -64,64 +64,86 @@ class TextProcessor implements ContentProcessor
         SemanticTree $semanticTree
     ): TextDecision {
 
-        // ====== EDGE CASES ======
+        // ========================================================================
+        // STEP 1: EDGE CASES (frameId/node validation)
+        // ========================================================================
 
-        // EDGE CASE 1: (Doc in ContentProcessor.php)
-        // Meaning: Dynamically generated Frame WITHOUT setting a frame context
+        // EDGE CASE 1: frameId === null
+        // Dynamically generated content WITHOUT frame context
         if ($frameId === null) {
             return TextDecision::ARTIFACT;
         }
         
         // Get semantic node
         $node = $semanticTree->getNodeById($frameId);
-
         
-        // EDGE CASE 2: (Doc in ContentProcessor.php)
-        // Meaning: Dynamically generated content WITH a Frame object
-        // Text splits etc.
-        if ($node === null) {                
+        // EDGE CASE 2: node === null
+        // Dynamically generated content WITH frame (text splits, etc.)
+        if ($node === null) {
             return TextDecision::CONTINUE;
         }
 
-        // ====== NODE CASES ======
-
-        // If any parent has a decorative role, continue
-
-        // Special Node cases: #text nodes or bullets etc,
-        if($node->isTextNode()) {
-
-            // no parent ? continue
-            if($node->getParent() === null) {
-                return TextDecision::CONTINUE;
-            }
-
-            // Close and Open with parent info
-            if($stateManager->getState() !== TaggingState::NONE) {
-                return TextDecision::CLOSE_AND_OPEN_WITH_PARENT_INFO;
-            }
+        // ========================================================================
+        // STEP 2: Check current state and node properties
+        // ========================================================================
+        
+        $currentState = $stateManager->getState();
+        $hasDecorativeParent = $node->hasDecorativeParent();
+        $isTextNode = $node->isTextNode();
+        
+        // ========================================================================
+        // STEP 3: STATE-BASED DECISION TREE
+        // ========================================================================
+        
+        switch ($currentState) {
             
-            // Open with parent info
-            return TextDecision::OPEN_WITH_PARENT_INFO;
+            // ────────────────────────────────────────────────────────────────
+            case TaggingState::NONE:
+            // ────────────────────────────────────────────────────────────────
+                if ($hasDecorativeParent) {
+                    return TextDecision::OPEN_ARTEFACT;
+                }
+                
+                if ($isTextNode) {
+                    // Text nodes use parent's tag
+                    return TextDecision::OPEN_WITH_PARENT_INFO;
+                }
+                
+                // Normal semantic element
+                return TextDecision::OPEN_NEW;
+            
+            // ────────────────────────────────────────────────────────────────
+            case TaggingState::SEMANTIC:
+            // ────────────────────────────────────────────────────────────────
+                if ($hasDecorativeParent) {
+                    return TextDecision::CLOSE_SEMANTIC_AND_OPEN_ARTEFACT;
+                }
+                
+                if ($isTextNode) {
+                    return TextDecision::CLOSE_AND_OPEN_WITH_PARENT_INFO;
+                }
+                
+                // Normal semantic element
+                return TextDecision::CLOSE_AND_OPEN_NEW;
+            
+            // ────────────────────────────────────────────────────────────────
+            case TaggingState::ARTIFACT:
+            // ────────────────────────────────────────────────────────────────
+                if ($hasDecorativeParent) {
+                    // Stay in artifact
+                    return TextDecision::CONTINUE;
+                }
+                
+                if ($isTextNode) {
+                    return TextDecision::CLOSE_ARTEFACT_AND_OPEN_WITH_PARENT_INFO;
+                }
+                
+                // Normal semantic element
+                return TextDecision::CLOSE_ARTEFACT_AND_OPEN_NEW;
         }
         
-        // General cases:
-        // Here we can ask anything now
-        // Are we inside an artefact or a tag ?
-        // Are we we an artefact/inlinetag or tag itself
-        // node->isArtifact
-        // node->isInlineTag
-        // stateManger == TaggingState::Semantic or none or whatevery 
-        // everything is possible ~ ~ ~ ~ 
-
-        // ====== GENERAL CASES ======
-
-        // New Frame but theres still an open BDC
-        if($stateManager->getState() === TaggingState::SEMANTIC) {
-            return TextDecision::CLOSE_AND_OPEN_NEW;  // BDC offen → schließen + öffnen
-        }
-
-        // New Frame and no BDC open, Problem the first frame in document
-        return TextDecision::OPEN_NEW;
+        // Fallback (should never reach here)
+        return TextDecision::CONTINUE;
     }
     
     /**
@@ -219,8 +241,71 @@ class TextProcessor implements ContentProcessor
                 $mcid = $stateManager->getActiveSemanticMCID();
                 break;
                 
+            case TextDecision::OPEN_ARTEFACT:
+                // Open artifact BDC (when parent is decorative)
+                $output .= TagOps::artifactOpen();
+                $stateManager->openArtifactBDC();
+                
+                $output .= $contentRenderer();
+                // Note: Don't close here - stays open for siblings
+                break;
+                
+            case TextDecision::CLOSE_SEMANTIC_AND_OPEN_ARTEFACT:
+                // Close semantic BDC and open artifact
+                $output .= TagOps::emc();
+                $stateManager->closeSemanticBDC();
+                
+                $output .= TagOps::artifactOpen();
+                $stateManager->openArtifactBDC();
+                
+                $output .= $contentRenderer();
+                break;
+                
+            case TextDecision::CLOSE_ARTEFACT_AND_OPEN_NEW:
+                // Close artifact and open semantic BDC
+                $output .= TagOps::artifactClose();
+                $stateManager->closeArtifactBDC();
+                
+                $node = $semanticTree->getNodeById($frameId);
+                $pdfTag = $node->getPdfStructureTag();
+                $nodeId = $node->id;
+                
+                $mcid = $stateManager->getNextMCID();
+                $output .= TagOps::bdcOpen($pdfTag, $mcid);
+                $stateManager->openSemanticBDC($frameId, $mcid);
+                
+                if ($onBDCOpened !== null) {
+                    $pageNumber = $stateManager->getCurrentPage();
+                    $onBDCOpened($frameId, $mcid, $pdfTag, $pageNumber);
+                }
+                
+                $output .= $contentRenderer();
+                break;
+                
+            case TextDecision::CLOSE_ARTEFACT_AND_OPEN_WITH_PARENT_INFO:
+                // Close artifact and open semantic BDC with parent info
+                $output .= TagOps::artifactClose();
+                $stateManager->closeArtifactBDC();
+                
+                $node = $semanticTree->getNodeById($frameId);
+                $parentNode = $node->getParent();
+                $pdfTag = $parentNode->getPdfStructureTag();
+                $nodeId = $parentNode->id;
+                
+                $mcid = $stateManager->getNextMCID();
+                $output .= TagOps::bdcOpen($pdfTag, $mcid);
+                $stateManager->openSemanticBDC($frameId, $mcid);
+                
+                if ($onBDCOpened !== null) {
+                    $pageNumber = $stateManager->getCurrentPage();
+                    $onBDCOpened($parentNode->id, $mcid, $pdfTag, $pageNumber);
+                }
+                
+                $output .= $contentRenderer();
+                break;
+                
             case TextDecision::ARTIFACT:
-                // Wrap as artifact
+                // Wrap as artifact (self-contained)
                 $output .= TagOps::artifactOpen();
                 $stateManager->openArtifactBDC();
                 
