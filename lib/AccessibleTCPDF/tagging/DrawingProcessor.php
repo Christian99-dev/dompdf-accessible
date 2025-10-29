@@ -42,7 +42,7 @@ class DrawingProcessor implements ContentProcessor
         $decision = $this->analyze($frameId, $stateManager, $semanticTree);
         
         // PHASE 2: Execute - Do it!
-        return $this->execute($decision, $stateManager, $semanticTree, $contentRenderer, $onBDCOpened);
+        return $this->execute($frameId, $decision, $stateManager, $semanticTree, $contentRenderer, $onBDCOpened);
     }
     
     /**
@@ -93,6 +93,7 @@ class DrawingProcessor implements ContentProcessor
      * @return string PDF operators
      */
     public function execute(
+        ?string $frameId,
         DrawingDecision $decision,
         TaggingStateManager $stateManager,
         SemanticTree $semanticTree,
@@ -102,13 +103,12 @@ class DrawingProcessor implements ContentProcessor
         $output = '';
         $pdfTag = null;
         $mcid = null;
-        $frameId = null;
         $nodeId = null;  // For logging: actual semantic node ID
         
         switch ($decision) {
             case DrawingDecision::INTERRUPT:
                 // Save state from StateManager (Single Source of Truth!)
-                $savedFrameId = $stateManager->getActiveSemanticFrameId();
+                $savedFrameId = $frameId;
                 $savedMcid = $stateManager->getActiveSemanticMCID();
                 
                 // Get PDF tag for re-open

@@ -179,7 +179,7 @@ class TextProcessor implements ContentProcessor
                 // Just render (BDC already open)
                 $output .= $contentRenderer();
                 $mcid = $stateManager->getActiveSemanticMCID();
-                $nodeId = $stateManager->getActiveSemanticFrameId();  // Current node
+                $nodeId = $frameId;  // Current node
                 break;
                 
             case TextDecision::ARTIFACT:

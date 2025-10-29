@@ -39,13 +39,6 @@ class TaggingStateManager
     private TaggingState $state = TaggingState::NONE;
     
     /**
-     * Currently active semantic BDC frame ID
-     * null = No semantic BDC is open
-     * @var string|null
-     */
-    private ?string $activeSemanticFrameId = null;
-    
-    /**
      * MCID of the currently open semantic BDC
      * null = No semantic BDC is open
      * @var int|null
@@ -85,18 +78,6 @@ class TaggingStateManager
     // ========================================================================
     
     /**
-     * Get the currently active semantic BDC frame ID
-     * 
-     * Used for re-opening semantic BDC after Artifact interruptions.
-     * 
-     * @return string|null Frame ID or null if no semantic BDC is open
-     */
-    public function getActiveSemanticFrameId(): ?string
-    {
-        return $this->activeSemanticFrameId;
-    }
-    
-    /**
      * Get the MCID of the currently active semantic BDC
      * 
      * CRITICAL: This is used for re-opening BDC with the SAME MCID after interruptions.
@@ -125,7 +106,6 @@ class TaggingStateManager
                 $frameId, $mcid, $this->state->name));
         
         $this->state = TaggingState::SEMANTIC;
-        $this->activeSemanticFrameId = $frameId;
         $this->activeSemanticMCID = $mcid;
     }
     
@@ -137,12 +117,10 @@ class TaggingStateManager
     public function closeSemanticBDC(): void
     {
         SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
-            sprintf("Closing Semantic BDC: frameId=%s, mcid=%s", 
-                $this->activeSemanticFrameId ?? 'null',
+            sprintf("Closing Semantic BDC: mcid=%s", 
                 $this->activeSemanticMCID !== null ? (string)$this->activeSemanticMCID : 'null'));
         
         $this->state = TaggingState::NONE;
-        $this->activeSemanticFrameId = null;
         $this->activeSemanticMCID = null;
     }
     
@@ -309,7 +287,6 @@ class TaggingStateManager
     {
         return [
             'state' => $this->state->name,
-            'activeSemanticFrameId' => $this->activeSemanticFrameId,
             'mcidCounter' => $this->mcidCounter
         ];
     }
@@ -326,8 +303,7 @@ class TaggingStateManager
     {
         if ($this->state === TaggingState::SEMANTIC && $this->state === TaggingState::ARTIFACT) {
             throw new \LogicException(
-                'INVALID STATE: Both semantic and artifact BDC are open! ' .
-                'Frame ID: ' . $this->activeSemanticFrameId
+                'INVALID STATE: Both semantic and artifact BDC are open! '
             );
         }
         
