@@ -355,20 +355,6 @@ class SemanticNode
     }
     
     /**
-     * Check if element is a content container
-     * 
-     * Content containers are elements that typically contain text/inline content
-     * and are used to locate parent elements for #text nodes.
-     * 
-     * @return bool
-     */
-    public function isContentContainer(): bool
-    {
-        $contentTags = ['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'td', 'th', 'li', 'span'];
-        return in_array($this->tag, $contentTags) && !$this->isDecorative();
-    }
-    
-    /**
      * Check if element is table-related
      * 
      * Table-related elements include table structure tags (table, tr, td, th)
@@ -715,76 +701,5 @@ class SemanticTree
         $treeStr .= $printNode($this->root);
 
         return $treeStr;
-    }
-    
-    // ========================================================================
-    // PARENT LOOKUP (for tagging)
-    // ========================================================================
-    
-    /**
-     * Find content container parent for a frame ID
-     * 
-     * This method is used by TaggingManager to find the parent element
-     * for text fragments and line-break frames that are not in the tree.
-     * 
-     * ARCHITECTURE: Tree contains ONLY semantic containers (div, p, h1, td, etc.)
-     * Text frames created during rendering are NOT in tree → need numeric fallback
-     * 
-     * STRATEGY:
-     * 1. Fast path: Direct tree lookup O(1) - works for semantic containers
-     * 2. Slow path: Numeric fallback O(n) - for text/line-break frames
-     * 
-     * OPTIMIZATIONS:
-     * - Simplified regex (one pattern vs three)
-     * - Reduced search range (50 vs 100 frames)
-     * - Fewer format attempts (2 vs 3 per iteration)
-     * 
-     * @param string $frameId The frame ID to find parent for
-     * @return SemanticNode|null The content container parent node
-     */
-    public function findContentContainerParent(string $frameId): ?SemanticNode
-    {
-        // FAST PATH: Direct tree lookup (O(1))
-        $node = $this->getNodeById($frameId);
-        
-        if ($node !== null) {
-            // Found in tree → walk up parent chain
-            $parent = $node->findParentWhere(fn($p) => $p->isContentContainer());
-            
-            if ($parent !== null) {
-                SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                    sprintf("Tree: frame %s → parent <%s> (frame %s)", 
-                        $frameId, $parent->tag, $parent->id)
-                );
-            }
-            
-            return $parent;
-        }
-        
-        // SLOW PATH: Numeric fallback for text/line-break frames
-        // Extract numeric ID (simplified regex - matches end digits)
-        if (!preg_match('/(\d+)$/', $frameId, $matches)) {
-            return null;  // No numeric ID → can't search
-        }
-        
-        $currentId = (int)$matches[1];
-        
-        // Search backwards up to 50 frames (reduced from 100)
-        for ($i = $currentId - 1; $i > 0 && $i > $currentId - 50; $i--) {
-            // Try common formats (reduced from 3 to 2)
-            foreach ([(string)$i, "frame_{$i}"] as $candidateId) {
-                $candidate = $this->getNodeById($candidateId);
-                
-                if ($candidate !== null && $candidate->isContentContainer()) {
-                    SimpleLogger::log("accessible_tcpdf_logs", __METHOD__, 
-                        sprintf("Fallback: frame %s → parent <%s> (frame %s)", 
-                            $frameId, $candidate->tag, $candidate->id)
-                    );
-                    return $candidate;
-                }
-            }
-        }
-        
-        return null;  // No parent found
     }
 }
