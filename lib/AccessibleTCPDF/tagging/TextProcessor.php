@@ -83,8 +83,8 @@ class TextProcessor implements ContentProcessor
 
         /* --  Node found **/
 
-        // Special Node cases: #text node
-        if($node->tag == "#text") {
+        // Special Node cases: #text nodes or bullets etc,
+        if($node->tag == "#text" || $node->tag == "bullet" ) {
 
             if($stateManager->getState() !== TaggingState::NONE) {
                 return TextDecision::CLOSE_AND_OPEN_WITH_PARENT_INFO;
@@ -137,10 +137,15 @@ class TextProcessor implements ContentProcessor
         ?callable $onBDCOpened = null
     ): string {
         $output = '';
+
+        // declare here for tagging info
         $pdfTag = null;
         $mcid = null;
-        $nodeId = null;  // For logging: actual semantic node ID
-        
+
+        // Get current node
+        $node = $semanticTree->getNodeById($frameId);
+        $nodeId = $node->id ?? null;  // For logging: actual semantic node ID
+
         // CRITICAL: Capture state BEFORE operation for accurate logging
         $stateBeforeOperation = $stateManager->getState();
         
@@ -153,9 +158,7 @@ class TextProcessor implements ContentProcessor
                 
             case TextDecision::OPEN_NEW:
                 // Get node (we know it exists from analyze)
-                $node = $semanticTree->getNodeById($frameId);
                 $pdfTag = $node->getPdfStructureTag();
-                $nodeId = $node->id;  // Store for logging
                 
                 // Open new semantic BDC (no closing needed)
                 $mcid = $stateManager->getNextMCID();
@@ -179,10 +182,8 @@ class TextProcessor implements ContentProcessor
 
             case TextDecision::OPEN_WITH_PARENT_INFO:
                 // Get node (we know it exists from analyze)
-                $node = $semanticTree->getNodeById($frameId);
                 $parentNode = $node->getParent();
                 $pdfTag = $parentNode->getPdfStructureTag();
-                $nodeId = $parentNode->id;  // Store for logging
 
                 // Open new semantic BDC (no closing needed)
                 $mcid = $stateManager->getNextMCID();
@@ -192,7 +193,7 @@ class TextProcessor implements ContentProcessor
                 // CALLBACK: Notify that BDC was opened
                 if ($onBDCOpened !== null) {
                     $pageNumber = $stateManager->getCurrentPage();
-                    $onBDCOpened($nodeId, $mcid, $pdfTag, $pageNumber);
+                    $onBDCOpened($parentNode->id, $mcid, $pdfTag, $pageNumber);
                 }
                 
                 // Render content
@@ -203,7 +204,6 @@ class TextProcessor implements ContentProcessor
                 // Just render (BDC already open)
                 $output .= $contentRenderer();
                 $mcid = $stateManager->getActiveSemanticMCID();
-                $nodeId = $frameId;  // Current node
                 break;
                 
             case TextDecision::ARTIFACT:

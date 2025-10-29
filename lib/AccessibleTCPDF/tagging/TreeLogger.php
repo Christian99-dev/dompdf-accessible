@@ -232,9 +232,9 @@ class TreeLogger
 
         // Edge case handling
         if ($edgeCase === 1) {
-            $parts[] = '(EDGE CASE 1: no frame ID)';
+            $parts[] = '(EDGE CASE 1: no frame ID set)';
         } elseif ($edgeCase === 2) {
-            $parts[] = '(EDGE CASE 2: node ID missing)';
+            $parts[] = '(EDGE CASE 2: no node found in semantic tree)';
         }
         
         // PDF tag and MCID for this operation (if present)
