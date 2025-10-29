@@ -78,8 +78,18 @@ class TextProcessor implements ContentProcessor
         $node = $semanticTree->getNodeById($frameId);
         
         // EDGE CASE 2: node === null
-        // Dynamically generated content WITH frame (text splits, etc.)
+        // Dynamically generated content WITH frame (text splits, font substitution, etc.)
+        // CRITICAL: CONTINUE only works if we're already inside a BDC tag!
+        // If we're in NONE state, we MUST open a tag first.
         if ($node === null) {
+            $currentState = $stateManager->getState();
+            
+            // If no BDC is open, we need to open one as ARTIFACT (no semantic info available)
+            if ($currentState === TaggingState::NONE) {
+                return TextDecision::OPEN_ARTEFACT;
+            }
+            
+            // If BDC is already open (SEMANTIC or ARTIFACT), continue in that context
             return TextDecision::CONTINUE;
         }
 
