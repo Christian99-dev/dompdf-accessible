@@ -18,7 +18,7 @@ enum DrawingDecision
      * - Semantic BDC is currently open
      * - Need to: Close semantic → Open artifact → Draw → Close artifact → Re-open semantic
      */
-    case INTERRUPT;
+    case CLOSE_BDC_ARTIFACT_REOPEN;
     
     /**
      * Continue in existing Artifact

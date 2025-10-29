@@ -73,7 +73,7 @@ class DrawingProcessor implements ContentProcessor
         // Make decision based on current state
         // Semantic BDC open? → Need interruption
         if ($stateManager->getState() === TaggingState::SEMANTIC) {
-            return [DrawingDecision::INTERRUPT, $renderedContent];
+            return [DrawingDecision::CLOSE_BDC_ARTIFACT_REOPEN, $renderedContent];
         }
         
         // Artifact BDC open? → Just draw
@@ -112,14 +112,14 @@ class DrawingProcessor implements ContentProcessor
         $output = '';
         $pdfTag = null;
         $mcid = null;
-        $nodeId = null;  // For logging: actual semantic node ID
+        $nodeId = $frameId ? $semanticTree->getNodeById($frameId)->id : null;  // For logging
         
         // CRITICAL: Capture state BEFORE operation for accurate logging
         $stateBeforeOperation = $stateManager->getState();
         
         // Execute based on decision
         switch ($decision) {
-            case DrawingDecision::INTERRUPT:
+            case DrawingDecision::CLOSE_BDC_ARTIFACT_REOPEN:
                 // Save state from StateManager (Single Source of Truth!)
                 $savedFrameId = $frameId;
                 $savedMcid = $stateManager->getActiveSemanticMCID();
@@ -151,7 +151,6 @@ class DrawingProcessor implements ContentProcessor
                 $frameId = $savedFrameId;
                 $mcid = $savedMcid;
                 $pdfTag = $savedPdfTag;
-                $nodeId = $savedFrameId;  // Node ID same as frame ID for INTERRUPT
                 break;
                 
             case DrawingDecision::CONTINUE:

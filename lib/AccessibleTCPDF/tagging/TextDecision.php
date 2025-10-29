@@ -48,4 +48,12 @@ enum TextDecision
      * - Node not found in semantic tree
      */
     case ARTIFACT;
+
+    /**
+     * No operation (nothing to do)
+     * 
+     * Used when:
+     * - Edge case where no action is needed
+     */
+    case OPEN_WITH_PARENT_INFO;
 }
