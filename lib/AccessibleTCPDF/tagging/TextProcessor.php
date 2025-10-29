@@ -128,6 +128,9 @@ class TextProcessor implements ContentProcessor
         $mcid = null;
         $nodeId = null;  // For logging: actual semantic node ID
         
+        // CRITICAL: Capture state BEFORE operation for accurate logging
+        $stateBeforeOperation = $stateManager->getState();
+        
         switch ($decision) {
             case TextDecision::OPEN_NEW:
                 // Get node (we know it exists from analyze)
@@ -198,11 +201,12 @@ class TextProcessor implements ContentProcessor
         TreeLogger::logTextOperation(
             $decision->name,
             $frameId,
+            $nodeId,
             $pdfTag,
             $mcid,
             $stateManager->getCurrentPage(),
             $output,
-            ['nodeId' => $nodeId]  // Add actual node ID to context
+            $stateBeforeOperation  // State BEFORE operation
         );
 
         return $output;

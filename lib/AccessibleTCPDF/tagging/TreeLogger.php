@@ -43,26 +43,28 @@ class TreeLogger
      * Log a text operation with compact tree structure
      * 
      * @param string $decision TextDecision name (OPEN_NEW, CONTINUE, ARTIFACT)
-     * @param string|null $frameId Frame ID if semantic
+     * @param string|null $frameId Frame ID being processed (can be null for edge cases)
+     * @param string|null $nodeId Node ID from SemanticTree (can differ from frameId)
      * @param string|null $pdfTag PDF tag (e.g., /P, /H1) if semantic
      * @param int|null $mcid MCID if semantic BDC
      * @param int $page Current page number
      * @param string $output The actual PDF operators generated
-     * @param array $context Additional context
+     * @param TaggingState $stateBeforeOperation State BEFORE the operation (for accurate logging)
      * @return void
      */
     public static function logTextOperation(
         string $decision,
         ?string $frameId,
+        ?string $nodeId,
         ?string $pdfTag,
         ?int $mcid,
         int $page,
         string $output,
-        array $context = []
+        TaggingState $stateBeforeOperation
     ): void {
         self::checkPageChange($page);
         
-        $tree = self::buildCompactTextTree($decision, $frameId, $pdfTag, $mcid, $output, $context);
+        $tree = self::buildCompactTextTree($decision, $frameId, $nodeId, $pdfTag, $mcid, $page, $output, $stateBeforeOperation);
         SimpleLogger::log("pdf_backend_tagging_logs", "\nTEXT", "\n$tree");
         
         self::$operationCounter++;
@@ -72,26 +74,28 @@ class TreeLogger
      * Log a drawing operation with compact tree structure
      * 
      * @param string $decision DrawingDecision name (INTERRUPT, CONTINUE, ARTIFACT)
-     * @param string|null $frameId Frame ID if re-opening semantic BDC
+     * @param string|null $frameId Frame ID being processed (can be null for edge cases)
+     * @param string|null $nodeId Node ID from SemanticTree (can differ from frameId)
      * @param string|null $pdfTag PDF tag if re-opening
      * @param int|null $mcid MCID if re-opening
      * @param int $page Current page number
      * @param string $output The actual PDF operators generated
-     * @param array $context Additional context (drawing type, etc.)
+     * @param TaggingState $stateBeforeOperation State BEFORE the operation (for accurate logging)
      * @return void
      */
     public static function logDrawingOperation(
         string $decision,
         ?string $frameId,
+        ?string $nodeId,
         ?string $pdfTag,
         ?int $mcid,
         int $page,
         string $output,
-        array $context = []
+        TaggingState $stateBeforeOperation
     ): void {
         self::checkPageChange($page);
         
-        $tree = self::buildCompactDrawingTree($decision, $frameId, $pdfTag, $mcid, $output, $context);
+        $tree = self::buildCompactDrawingTree($decision, $frameId, $nodeId, $pdfTag, $mcid, $page, $output, $stateBeforeOperation);
         SimpleLogger::log("pdf_backend_tagging_logs", "\nDRAW", "\n$tree");
         
         self::$operationCounter++;
@@ -115,26 +119,20 @@ class TreeLogger
     private static function buildCompactTextTree(
         string $decision,
         ?string $frameId,
+        ?string $nodeId,
         ?string $pdfTag,
         ?int $mcid,
+        int $page,
         string $output,
-        array $context
+        TaggingState $stateBeforeOperation
     ): string {
         $icon = self::getDecisionIcon($decision);
-        $frameShort = $frameId ? self::shortenFrameId($frameId) : 'none';
-        $nodeShort = isset($context['nodeId']) ? self::shortenFrameId($context['nodeId']) : null;
         
-        // Main line: 🟢 TEXT [OPEN_NEW] frame=text_123 node=p_5 → /P (MCID=5)
-        $mainLine = "{$icon} TEXT [{$decision}] frame={$frameShort}";
-        if ($nodeShort !== null) {
-            $mainLine .= " node={$nodeShort}";
-        }
-        if ($pdfTag !== null) {
-            $mainLine .= " → {$pdfTag}";
-            if ($mcid !== null) {
-                $mainLine .= " (MCID={$mcid})";
-            }
-        }
+        // Build info line with all context (skip tag for ARTIFACT decision)
+        $info = self::buildContextInfo($frameId, $nodeId, $pdfTag, $mcid, $stateBeforeOperation, $decision);
+        
+        // Main line: 🟢 TEXT [OPEN_NEW] frame=6 node=6 state=NONE → P (MCID=0) | page 1
+        $mainLine = "{$icon} TEXT [{$decision}] {$info} | page {$page}";
         
         $lines = [self::BRANCH . ' ' . $mainLine];
         
@@ -159,26 +157,20 @@ class TreeLogger
     private static function buildCompactDrawingTree(
         string $decision,
         ?string $frameId,
+        ?string $nodeId,
         ?string $pdfTag,
         ?int $mcid,
+        int $page,
         string $output,
-        array $context
+        TaggingState $stateBeforeOperation
     ): string {
         $icon = self::getDecisionIcon($decision);
-        $type = $context['type'] ?? 'unknown';
-        $nodeShort = isset($context['nodeId']) ? self::shortenFrameId($context['nodeId']) : null;
         
-        // Main line: 🟠 DRAW [INTERRUPT] border node=p_5 → /P (MCID=5)
-        $mainLine = "{$icon} DRAW [{$decision}] {$type}";
-        if ($nodeShort !== null) {
-            $mainLine .= " node={$nodeShort}";
-        }
-        if ($decision === 'INTERRUPT' && $pdfTag !== null) {
-            $mainLine .= " → {$pdfTag}";
-            if ($mcid !== null) {
-                $mainLine .= " (MCID={$mcid})";
-            }
-        }
+        // Build info line with all context (skip tag for ARTIFACT decision)
+        $info = self::buildContextInfo($frameId, $nodeId, $pdfTag, $mcid, $stateBeforeOperation, $decision);
+        
+        // Main line: 🟠 DRAW [INTERRUPT] frame=12 node=12 state=SEMANTIC → Div (MCID=0) | page 1
+        $mainLine = "{$icon} DRAW [{$decision}] {$info} | page {$page}";
         
         $lines = [self::BRANCH . ' ' . $mainLine];
         
@@ -195,6 +187,67 @@ class TreeLogger
         }
         
         return implode("\n", $lines);
+    }
+    
+    /**
+     * Build context info string with all relevant information
+     * 
+     * Format: frame=6 node=6 state=SEMANTIC → Div (MCID=1)
+     * For ARTIFACT decision: frame=6 node=6 state=SEMANTIC (skips redundant "→ Artifact")
+     * 
+     * @param string|null $frameId Current frame ID
+     * @param string|null $nodeId Current node ID from tree
+     * @param string|null $pdfTag PDF tag for this operation
+     * @param int|null $mcid MCID for this operation
+     * @param TaggingState $stateBeforeOperation State BEFORE the operation
+     * @param string $decision Decision name (to avoid redundancy with ARTIFACT)
+     * @return string Formatted context string
+     */
+    private static function buildContextInfo(
+        ?string $frameId,
+        ?string $nodeId,
+        ?string $pdfTag,
+        ?int $mcid,
+        TaggingState $stateBeforeOperation,
+        string $decision
+    ): string {
+        $parts = [];
+        $edgeCase = 0;
+
+        // Check for edge cases (e.g., empty frame ID)
+        if ($frameId === null) {
+            $edgeCase = 1;
+        }
+        if ($frameId !== null && $nodeId === null) {
+            $edgeCase = 2;
+        }
+        // Frame ID (always show, even if null)
+        $parts[] = 'frame=' . ($frameId ?? 'null');
+        
+        // Node ID (always show, even if null or same as frame)
+        $parts[] = 'node=' . ($nodeId ?? 'null');
+        
+        // State BEFORE operation (critical for understanding what's happening)
+        $parts[] = 'state=' . $stateBeforeOperation->name;
+
+        // Edge case handling
+        if ($edgeCase === 1) {
+            $parts[] = '(EDGE CASE 1: no frame ID)';
+        } elseif ($edgeCase === 2) {
+            $parts[] = '(EDGE CASE 2: node ID missing)';
+        }
+        
+        // PDF tag and MCID for this operation (if present)
+        // Skip tag if decision is ARTIFACT (redundant: [ARTIFACT] → Artifact)
+        if ($pdfTag !== null && $decision !== 'ARTIFACT') {
+            $tagInfo = "→ {$pdfTag}";
+            if ($mcid !== null) {
+                $tagInfo .= " (MCID={$mcid})";
+            }
+            $parts[] = $tagInfo;
+        }
+        
+        return implode(' ', $parts);
     }
     
     /**

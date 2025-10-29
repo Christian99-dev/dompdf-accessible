@@ -62,7 +62,7 @@ class DrawingProcessor implements ContentProcessor
         ?string $frameId,
         TaggingStateManager $stateManager,
         SemanticTree $semanticTree
-    ): DrawingDecision {
+    ): DrawingDecision {        
         // Semantic BDC open? → Need interruption
         if ($stateManager->getState() === TaggingState::SEMANTIC) {
             return DrawingDecision::INTERRUPT;
@@ -104,6 +104,9 @@ class DrawingProcessor implements ContentProcessor
         $pdfTag = null;
         $mcid = null;
         $nodeId = null;  // For logging: actual semantic node ID
+        
+        // CRITICAL: Capture state BEFORE operation for accurate logging
+        $stateBeforeOperation = $stateManager->getState();
         
         switch ($decision) {
             case DrawingDecision::INTERRUPT:
@@ -168,11 +171,12 @@ class DrawingProcessor implements ContentProcessor
         TreeLogger::logDrawingOperation(
             $decision->name,
             $frameId,
+            $nodeId,
             $pdfTag,
             $mcid,
             $stateManager->getCurrentPage(),
             $output,
-            ['nodeId' => $nodeId]  // Add actual node ID to context
+            $stateBeforeOperation  // State BEFORE operation
         );
         
         return $output;
