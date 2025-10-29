@@ -73,6 +73,17 @@ class AccessibleTCPDF extends TCPDF
      * @var string|null
      */
     private ?string $currentFrameId = null;
+    
+    /**
+     * Guard flag to prevent recursive processing during captureParentOutput
+     * 
+     * Problem: TCPDF methods can call each other internally (e.g., Circle() calls Ellipse())
+     * Solution: Set this flag during captureParentOutput() to bypass DrawingProcessor
+     *           for nested calls, preventing double-processing and phantom outputs
+     * 
+     * @var bool
+     */
+    private bool $isCapturingParentOutput = false;
 
     /**
      * PDF/UA mode enabled
@@ -249,8 +260,14 @@ class AccessibleTCPDF extends TCPDF
         // Save current page buffer length
         $beforeLength = isset($this->pages[$this->page]) ? strlen($this->pages[$this->page]) : 0;
         
+        // Set guard flag to prevent recursive processing
+        $this->isCapturingParentOutput = true;
+        
         // Execute the callback (outputs to buffer)
         $callback();
+        
+        // Clear guard flag
+        $this->isCapturingParentOutput = false;
         
         // Extract what was added to buffer
         $afterLength = isset($this->pages[$this->page]) ? strlen($this->pages[$this->page]) : 0;
@@ -968,8 +985,8 @@ class AccessibleTCPDF extends TCPDF
      * Override Line() using universal drawing pattern
      */
     public function Line($x1, $y1, $x2, $y2, $style=array()) {
-        // If not PDF/UA mode, call parent directly
-        if ($this->pdfua !== true) {
+        // If not PDF/UA mode OR we're inside captureParentOutput, call parent directly
+        if ($this->pdfua !== true || $this->isCapturingParentOutput) {
             parent::Line($x1, $y1, $x2, $y2, $style);
             return;
         }
@@ -992,8 +1009,8 @@ class AccessibleTCPDF extends TCPDF
      * Override Rect() using universal drawing pattern
      */
     public function Rect($x, $y, $w, $h, $style='', $border_style=array(), $fill_color=array()) {
-        // If not PDF/UA mode, call parent directly
-        if ($this->pdfua !== true) {
+        // If not PDF/UA mode OR we're inside captureParentOutput, call parent directly
+        if ($this->pdfua !== true || $this->isCapturingParentOutput) {
             parent::Rect($x, $y, $w, $h, $style, $border_style, $fill_color);
             return;
         }
@@ -1016,8 +1033,8 @@ class AccessibleTCPDF extends TCPDF
      * Override Circle() using universal drawing pattern
      */
     public function Circle($x0, $y0, $r, $angstr=0, $angend=360, $style='', $line_style=array(), $fill_color=array(), $nc=2) {
-        // If not PDF/UA mode, call parent directly
-        if ($this->pdfua !== true) {
+        // If not PDF/UA mode OR we're inside captureParentOutput, call parent directly
+        if ($this->pdfua !== true || $this->isCapturingParentOutput) {
             parent::Circle($x0, $y0, $r, $angstr, $angend, $style, $line_style, $fill_color, $nc);
             return;
         }
@@ -1040,8 +1057,8 @@ class AccessibleTCPDF extends TCPDF
      * Override Ellipse() using universal drawing pattern
      */
     public function Ellipse($x0, $y0, $rx, $ry=0, $angle=0, $astart=0, $afinish=360, $style='', $line_style=array(), $fill_color=array(), $nc=2) {
-        // If not PDF/UA mode, call parent directly
-        if ($this->pdfua !== true) {
+        // If not PDF/UA mode OR we're inside captureParentOutput, call parent directly
+        if ($this->pdfua !== true || $this->isCapturingParentOutput) {
             parent::Ellipse($x0, $y0, $rx, $ry, $angle, $astart, $afinish, $style, $line_style, $fill_color, $nc);
             return;
         }
@@ -1064,8 +1081,8 @@ class AccessibleTCPDF extends TCPDF
      * Override Polygon() using universal drawing pattern
      */
     public function Polygon($p, $style='', $line_style=array(), $fill_color=array(), $closed=true) {
-        // If not PDF/UA mode, call parent directly
-        if ($this->pdfua !== true) {
+        // If not PDF/UA mode OR we're inside captureParentOutput, call parent directly
+        if ($this->pdfua !== true || $this->isCapturingParentOutput) {
             parent::Polygon($p, $style, $line_style, $fill_color, $closed);
             return;
         }

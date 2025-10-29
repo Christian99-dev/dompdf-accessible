@@ -29,19 +29,9 @@ require_once __DIR__ . '/../../../src/SimpleLogger.php';
 class DrawingProcessor implements ContentProcessor
 {
     /**
-     * Cache to detect duplicate drawing calls (phantom calls)
-     * Format: ["frameId:hash" => true]
-     * @var array
-     */
-    private array $processedDrawings = [];
-    
-    /**
      * Process drawing operation
      * 
      * Simple orchestration: analyze → execute
-     * 
-     * IMPORTANT: We call contentRenderer() in analyze() to detect phantom calls BEFORE
-     * making any state changes. This keeps the flow clean and systematic.
      */
     public function process(
         ?string $frameId,
@@ -61,12 +51,9 @@ class DrawingProcessor implements ContentProcessor
      * PHASE 1: Analyze drawing decision
      * 
      * Determines what action to take based on current state:
-     * - Content empty (phantom call)? → PHANTOM
      * - Semantic BDC open? → Need interruption (close → artifact → re-open)
      * - Artifact BDC open? → Just draw (continue)
      * - Nothing open? → Wrap as artifact
-     * 
-     * IMPORTANT: We render content HERE to detect phantom calls before any state changes!
      * 
      * @param string|null $frameId Current frame ID (not used for drawings, but part of interface)
      * @param TaggingStateManager $stateManager State manager
@@ -80,41 +67,10 @@ class DrawingProcessor implements ContentProcessor
         SemanticTree $semanticTree,
         callable $contentRenderer
     ): array {
-        // STEP 1: Render content FIRST (might be empty if captureParentOutput removed it)
+        // Render content
         $renderedContent = $contentRenderer();
         
-                // STEP 1: Check if content is empty (captureParentOutput removed it)
-
-        
-        // STEP 2: Check for duplicate call (deduplication based on frameId + content hash)
-        // This detects when TCPDF calls the same drawing operation multiple times
-        if ($frameId !== null && trim($renderedContent) !== '') {
-            // CRITICAL: Strip BDC/EMC wrappers before hashing to detect duplicates
-            // Problem: Second call may have captured our own /Artifact BMC wrapper
-            // Solution: Hash only the pure drawing operations (m, l, c, f, S, etc.)
-            // Pattern matches:
-            // - /Artifact BMC
-            // - /Div <</MCID X>> BDC (or any tag name)
-            // - EMC (standalone, with spaces/newlines)
-            $cleanedContent = preg_replace('/\/\w+\s+(?:BMC|<<[^>]+>>\s+BDC)|EMC/s', '', $renderedContent);
-            $contentHash = md5(trim($cleanedContent));
-            $key = "{$frameId}:{$contentHash}";
-            
-            if (isset($this->processedDrawings[$key])) {
-                // Already processed this exact drawing - it's a phantom duplicate
-                return [DrawingDecision::PHANTOM, ''];
-            }
-            
-            // Mark as processed
-            $this->processedDrawings[$key] = true;
-        }
-        
-        // STEP 3: If content is empty, this is also a phantom call
-        if (trim($renderedContent) === '') {
-            return [DrawingDecision::PHANTOM, $renderedContent];
-        }
-        
-        // STEP 4: Content is real and not a duplicate - make normal decision based on state
+        // Make decision based on current state
         // Semantic BDC open? → Need interruption
         if ($stateManager->getState() === TaggingState::SEMANTIC) {
             return [DrawingDecision::INTERRUPT, $renderedContent];
@@ -133,7 +89,6 @@ class DrawingProcessor implements ContentProcessor
      * PHASE 2: Execute drawing with proper wrapping
      * 
      * Actions based on decision:
-     * - PHANTOM: Just log and return (no state changes, no output)
      * - INTERRUPT: Close semantic → Open artifact → Draw → Close artifact → Re-open semantic (same MCID!)
      * - CONTINUE: Just draw (already in artifact)
      * - ARTIFACT: Open artifact → Draw → Close artifact
@@ -164,11 +119,6 @@ class DrawingProcessor implements ContentProcessor
         
         // Execute based on decision
         switch ($decision) {
-            case DrawingDecision::PHANTOM:
-                // Phantom call - no state changes, no output
-                // Just fall through to logging
-                break;
-                
             case DrawingDecision::INTERRUPT:
                 // Save state from StateManager (Single Source of Truth!)
                 $savedFrameId = $frameId;
