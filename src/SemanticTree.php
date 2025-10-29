@@ -325,16 +325,6 @@ class SemanticNode
     }
     
     /**
-     * Check if element is a heading
-     * 
-     * @return bool
-     */
-    public function isHeading(): bool
-    {
-        return in_array($this->tag, ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'], true);
-    }
-    
-    /**
      * Check if element is an image
      * 
      * @return bool
