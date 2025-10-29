@@ -19,6 +19,11 @@
  * Meaning: Dynamically generated content WITHOUT frame context, Renderer never calls setCurrentFrameId()
  * 
  * Trigger:
+ * -> TCPDF auto-generated content (page headers/footers, page numbers)
+ * -> Direct TCPDF API calls bypassing dompdf renderer
+ * -> CSS backgrounds/borders rendered without frame context
+ * -> Decorative graphics added by rendering code
+ * -> Any content rendered without prior setCurrentFrameId() call
  * 
  * ────────────────────────────────────────────────────────────────────────────
  * 
