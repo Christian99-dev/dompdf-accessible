@@ -283,6 +283,12 @@ class SemanticNode
     // SEMANTIC CLASSIFICATION (copied from SemanticElement)
     // ========================================================================
     
+
+    public function isTextNode(): bool
+    {
+        $tags = ['#text', 'bullet'];
+        return in_array($this->tag, $tags, true);
+    }
     /**
      * Check if element should be treated as decorative (artifact)
      * 

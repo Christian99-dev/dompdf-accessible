@@ -64,6 +64,8 @@ class TextProcessor implements ContentProcessor
         SemanticTree $semanticTree
     ): TextDecision {
 
+        // ====== EDGE CASES ======
+
         // EDGE CASE 1: (Doc in ContentProcessor.php)
         // Meaning: Dynamically generated Frame WITHOUT setting a frame context
         if ($frameId === null) {
@@ -81,15 +83,24 @@ class TextProcessor implements ContentProcessor
             return TextDecision::CONTINUE;
         }
 
-        /* --  Node found **/
+        // ====== NODE CASES ======
+
+        // If any parent has a decorative role, continue
 
         // Special Node cases: #text nodes or bullets etc,
-        if($node->tag == "#text" || $node->tag == "bullet" ) {
+        if($node->isTextNode()) {
 
+            // no parent ? continue
+            if($node->getParent() === null) {
+                return TextDecision::CONTINUE;
+            }
+
+            // Close and Open with parent info
             if($stateManager->getState() !== TaggingState::NONE) {
                 return TextDecision::CLOSE_AND_OPEN_WITH_PARENT_INFO;
             }
-    
+            
+            // Open with parent info
             return TextDecision::OPEN_WITH_PARENT_INFO;
         }
         
@@ -101,6 +112,8 @@ class TextProcessor implements ContentProcessor
         // node->isInlineTag
         // stateManger == TaggingState::Semantic or none or whatevery 
         // everything is possible ~ ~ ~ ~ 
+
+        // ====== GENERAL CASES ======
 
         // New Frame but theres still an open BDC
         if($stateManager->getState() === TaggingState::SEMANTIC) {
