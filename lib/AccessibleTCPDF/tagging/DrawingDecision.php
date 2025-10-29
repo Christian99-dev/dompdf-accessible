@@ -37,4 +37,14 @@ enum DrawingDecision
      * - Wrap drawing in /Artifact BMC ... EMC
      */
     case ARTIFACT;
+    
+    /**
+     * Phantom call - content will be discarded
+     * 
+     * Used when:
+     * - contentRenderer() returns empty string (captureParentOutput removed it)
+     * - No state changes should occur
+     * - Logged for debugging purposes only
+     */
+    case PHANTOM;
 }

@@ -164,6 +164,12 @@ class TreeLogger
         string $output,
         TaggingState $stateBeforeOperation
     ): string {
+        // PHANTOM calls get minimal output (single gray line)
+        if ($decision === 'PHANTOM') {
+            $frameInfo = $frameId !== null ? "frame={$frameId}" : 'frame=null';
+            return self::BRANCH . " ⚫ DRAW [PHANTOM] {$frameInfo} (captureParentOutput removed content)";
+        }
+        
         $icon = self::getDecisionIcon($decision);
         
         // Build info line with all context (skip tag for ARTIFACT decision)
@@ -275,6 +281,7 @@ class TreeLogger
             'CONTINUE' => '🔵',
             'ARTIFACT' => '🟡',
             'INTERRUPT' => '🟠',
+            'PHANTOM' => '⚫',
             default => '⚪'
         };
     }
