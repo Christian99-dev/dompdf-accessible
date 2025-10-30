@@ -132,29 +132,45 @@ class StructureTreeBuilder
         $strings = [];  // All PDF object strings to output
         
         // ========================================================================
-        // PHASE 1: COLLECT ALL SEMANTIC ELEMENTS (excluding non-semantic wrappers)
+        // PHASE 1: COLLECT ALL SEMANTIC ELEMENTS
         // ========================================================================
+        // Strategy: Start with rendered elements (have MCID), then walk tree to collect:
+        // 1. Ancestors (for hierarchy)
+        // 2. Siblings that requiresStructureElement() (for PDF/UA rules like table columns)
+        //
+        // Example: <tr><td></td><td>Text</td></tr>
+        // - TD with text is rendered → in $structureTree
+        // - Walk ancestors → collect TR
+        // - TR's children include empty TD → collect it via requiresStructureElement()
         
         $allSemanticElements = [];
         
         foreach ($this->structureTree as $struct) {
             $semantic = $struct['semantic'];
             
-            // Skip non-semantic wrappers (html, body) - they just add noise
+            // Skip non-semantic wrappers (html, body)
             if (!$semantic->isNonSemanticWrapper()) {
                 $allSemanticElements[$semantic->id] = $semantic;
             }
             
-            // Collect ancestors (but skip non-semantic wrappers)
+            // Collect ancestors (skip wrappers)
             foreach ($semantic->getAncestors() as $ancestor) {
                 if (!$ancestor->isNonSemanticWrapper() && !isset($allSemanticElements[$ancestor->id])) {
                     $allSemanticElements[$ancestor->id] = $ancestor;
+                    
+                    // CRITICAL: Collect ALL children of this ancestor that require structure presence
+                    // This ensures empty table cells are included for consistent column counts
+                    foreach ($ancestor->getChildren() as $child) {
+                        if ($child->requiresStructureElement() && !isset($allSemanticElements[$child->id])) {
+                            $allSemanticElements[$child->id] = $child;
+                        }
+                    }
                 }
             }
         }
         
         SimpleLogger::log("pdf_backend_structure_tree_logs", __METHOD__, 
-            sprintf("Collected %d semantic elements (html/body wrappers excluded)", count($allSemanticElements))
+            sprintf("Collected %d semantic elements (including required siblings)", count($allSemanticElements))
         );
         
         // Pre-calculate depths for O(1) sorting

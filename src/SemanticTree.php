@@ -448,6 +448,24 @@ class SemanticNode
         return in_array($this->tag, $tableElements, true);
     }
     
+    /**
+     * Check if element MUST be included in PDF Structure Tree even without content
+     * 
+     * PDF/UA Rule 7.5: Table rows must have consistent column counts.
+     * Empty table cells (td/th without content) must still exist in structure tree
+     * to maintain column count consistency across all rows.
+     * 
+     * This method encapsulates PDF/UA structural requirements at the semantic level,
+     * preventing hardcoded logic in StructureTreeBuilder.
+     * 
+     * @return bool True if element requires StructElem even without MCID
+     */
+    public function requiresStructureElement(): bool
+    {
+        $tagsRequiringStructure = ['td', 'th'];
+        return in_array($this->tag, $tagsRequiringStructure, true);
+    }
+    
     // ========================================================================
     // PDF STRUCTURE MAPPING (copied from SemanticElement)
     // ========================================================================
