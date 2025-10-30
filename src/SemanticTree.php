@@ -519,6 +519,30 @@ class SemanticNode
         return $this->isImage() && $this->hasAttribute('alt');
     }
     
+    /**
+     * Get aria-label attribute value
+     * 
+     * ARIA labels provide accessible names for elements.
+     * Used in PDF/UA as /Alt text for better screenreader support.
+     * 
+     * @return string|null The aria-label value or null if not set
+     */
+    public function getAriaLabel(): ?string
+    {
+        return $this->getAttribute('aria-label');
+    }
+    
+    /**
+     * Check if element has aria-label attribute
+     * 
+     * @return bool True if aria-label is present and non-empty
+     */
+    public function hasAriaLabel(): bool
+    {
+        $label = $this->getAriaLabel();
+        return $label !== null && trim($label) !== '';
+    }
+    
     // ========================================================================
     // DEBUG & LOGGING
     // ========================================================================

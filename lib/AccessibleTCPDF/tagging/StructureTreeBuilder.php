@@ -328,6 +328,14 @@ class StructureTreeBuilder
                 $out .= ' /Alt (' . $altText . ')';
             }
             
+            // Title for all other elements with aria-label
+            // Uses /T (Title) instead of /Alt for non-image elements
+            // This is more semantically correct according to PDF spec
+            if (!$semantic->isImage() && $semantic->hasAriaLabel()) {
+                $ariaLabel = TCPDF_STATIC::_escape($semantic->getAriaLabel());
+                $out .= ' /T (' . $ariaLabel . ')';
+            }
+            
             // Add TH Scope attribute
             if ($pdfTag === 'TH') {
                 $scope = 'Column';
