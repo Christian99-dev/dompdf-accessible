@@ -318,6 +318,25 @@ class SemanticNode
         $tags = ['#text', 'bullet'];
         return in_array($this->tag, $tags, true);
     }
+    
+    /**
+     * Check if element is a non-semantic wrapper that can be skipped in structure tree
+     * 
+     * HTML/Body are structural containers without semantic meaning for PDF/UA.
+     * Their content should be included directly under Document.
+     * 
+     * NOTE: 'document' is NOT included here! /Document is the required PDF/UA root element.
+     * 
+     * @return bool True if this is a skippable wrapper (html, body)
+     */
+    public function isNonSemanticWrapper(): bool
+    {
+        // HTML and Body are structural wrappers without PDF/UA semantic value
+        // Document is NOT a wrapper - it's the required PDF/UA root element!
+        $wrapperTags = ['html', 'body'];
+        return in_array($this->tag, $wrapperTags, true);
+    }
+    
     /**
      * Check if element should be treated as decorative (artifact)
      * 

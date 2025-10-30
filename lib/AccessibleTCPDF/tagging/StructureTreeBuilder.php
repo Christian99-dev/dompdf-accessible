@@ -132,7 +132,7 @@ class StructureTreeBuilder
         $strings = [];  // All PDF object strings to output
         
         // ========================================================================
-        // PHASE 1: COLLECT ALL SEMANTIC ELEMENTS (including non-rendered containers)
+        // PHASE 1: COLLECT ALL SEMANTIC ELEMENTS (excluding non-semantic wrappers)
         // ========================================================================
         
         $allSemanticElements = [];
@@ -140,21 +140,21 @@ class StructureTreeBuilder
         foreach ($this->structureTree as $struct) {
             $semantic = $struct['semantic'];
             
-            // Collect element and all ancestors
-            $ancestors = [$semantic->id => $semantic];
-            foreach ($semantic->getAncestors() as $ancestor) {
-                $ancestors[$ancestor->id] = $ancestor;
+            // Skip non-semantic wrappers (html, body) - they just add noise
+            if (!$semantic->isNonSemanticWrapper()) {
+                $allSemanticElements[$semantic->id] = $semantic;
             }
             
-            foreach ($ancestors as $frameId => $ancestor) {
-                if (!isset($allSemanticElements[$frameId])) {
-                    $allSemanticElements[$frameId] = $ancestor;
+            // Collect ancestors (but skip non-semantic wrappers)
+            foreach ($semantic->getAncestors() as $ancestor) {
+                if (!$ancestor->isNonSemanticWrapper() && !isset($allSemanticElements[$ancestor->id])) {
+                    $allSemanticElements[$ancestor->id] = $ancestor;
                 }
             }
         }
         
         SimpleLogger::log("pdf_backend_structure_tree_logs", __METHOD__, 
-            sprintf("Collected %d semantic elements (including containers)", count($allSemanticElements))
+            sprintf("Collected %d semantic elements (html/body wrappers excluded)", count($allSemanticElements))
         );
         
         // Pre-calculate depths for O(1) sorting
@@ -237,8 +237,14 @@ class StructureTreeBuilder
                 $htmlIdToObjId[$htmlId] = $objId;
             }
             
-            // Get parent object ID
+            // Get parent object ID (skip non-semantic wrappers like html/body)
             $parent = $semantic->getParent();
+            
+            // Walk up tree skipping non-semantic wrappers
+            while ($parent !== null && $parent->isNonSemanticWrapper()) {
+                $parent = $parent->getParent();
+            }
+            
             $parentObjId = $parent !== null && isset($frameIdToObjId[$parent->id])
                 ? $frameIdToObjId[$parent->id]
                 : $documentObjId;
@@ -275,9 +281,22 @@ class StructureTreeBuilder
                 // Container element → has child StructElems
                 $children = $semantic->getChildren();
                 
-                if (!empty($children)) {
+                // Collect actual children, skipping non-semantic wrappers and getting their children instead
+                $actualChildren = [];
+                foreach ($children as $child) {
+                    if ($child->isNonSemanticWrapper()) {
+                        // Skip wrapper, add its children instead
+                        foreach ($child->getChildren() as $grandchild) {
+                            $actualChildren[] = $grandchild;
+                        }
+                    } else {
+                        $actualChildren[] = $child;
+                    }
+                }
+                
+                if (!empty($actualChildren)) {
                     $childObjIds = array_filter(
-                        array_map(fn($child) => $frameIdToObjId[$child->id] ?? null, $children),
+                        array_map(fn($child) => $frameIdToObjId[$child->id] ?? null, $actualChildren),
                         fn($objId) => $objId !== null && $objId > 0
                     );
                     
