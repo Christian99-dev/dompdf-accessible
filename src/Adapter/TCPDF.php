@@ -1014,6 +1014,17 @@ class TCPDF implements Canvas
             SimpleLogger::log('tcpdf_logs', '25. ' . __FUNCTION__, "Text at ({$x}, {$y}) intersects with clipping bounds - rendering");
         }
         
+        // Handle transparent color (don't render)
+        if (is_string($color) && $color === 'transparent') {
+            SimpleLogger::log('tcpdf_logs', '25a. ' . __FUNCTION__, "Skipping transparent text");
+            return;
+        }
+        
+        // Ensure color is an array
+        if (!is_array($color)) {
+            $color = [0, 0, 0]; // Default to black
+        }
+        
         // Convert color values from 0-1 range to 0-255 range for TCPDF
         $r = (int)($color[0] * 255);
         $g = (int)($color[1] * 255);
