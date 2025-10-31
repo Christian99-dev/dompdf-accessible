@@ -101,6 +101,7 @@ class TextProcessor implements ContentProcessor
         $hasDecorativeParent = $node->hasDecorativeParent();
         $isTextNode = $node->isTextNode();
         $isTransparentInlineTag = $node->isTransparentInlineTag();
+        $isLineBreakNode = $semanticTree->isLinebreakNode($node->id);
         
         // ========================================================================
         // STEP 3: STATE-BASED DECISION TREE
@@ -114,7 +115,13 @@ class TextProcessor implements ContentProcessor
                 if ($hasDecorativeParent) {
                     return TextDecision::OPEN_ARTEFACT;
                 }
-                
+
+                if ($isLineBreakNode) { 
+                    // Line break should not open a tag - it's invisible!
+                    // If we're in NONE state, open parent's tag first
+                    return TextDecision::OPEN_WITH_PARENT_INFO;
+                }
+
                 if ($isTextNode || $isTransparentInlineTag) {
                     // Text nodes and transparent inline tags use parent's tag
                     return TextDecision::OPEN_WITH_PARENT_INFO;
@@ -128,6 +135,10 @@ class TextProcessor implements ContentProcessor
             // ────────────────────────────────────────────────────────────────
                 if ($hasDecorativeParent) {
                     return TextDecision::CLOSE_SEMANTIC_AND_OPEN_ARTEFACT;
+                }
+
+                if ($isLineBreakNode) { 
+                    return TextDecision::CONTINUE;
                 }
                 
                 if ($isTextNode || $isTransparentInlineTag) {
@@ -146,6 +157,11 @@ class TextProcessor implements ContentProcessor
                     return TextDecision::CONTINUE;
                 }
                 
+                if ($isLineBreakNode) {
+                    // Line break inside artifact tag: just continue!
+                    return TextDecision::CONTINUE;
+                }
+
                 if ($isTextNode || $isTransparentInlineTag) {
                     // Text nodes and transparent inline tags use parent's tag
                     return TextDecision::CLOSE_ARTEFACT_AND_OPEN_WITH_PARENT_INFO;

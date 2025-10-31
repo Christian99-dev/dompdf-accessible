@@ -724,6 +724,13 @@ class SemanticTree
     {
         return $this->nodeMap;
     }
+
+    // is linebreak node by id, look up one node and check if tag is br
+
+    public function isLinebreakNode(string $nodeId): bool {
+        $node = $this->getNodeById($nodeId - 1);
+        return $node !== null && $node->tag === 'br';
+    }
     
     // ========================================================================
     // ROOT & STATISTICS
