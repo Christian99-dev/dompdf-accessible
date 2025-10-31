@@ -70,6 +70,7 @@ class TextProcessor implements ContentProcessor
 
         // EDGE CASE 1: frameId === null
         // Dynamically generated content WITHOUT frame context
+        // this happens if you manually draw text with the canvas
         if ($frameId === null) {
             return TextDecision::ARTIFACT;
         }
