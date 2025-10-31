@@ -328,12 +328,39 @@ class StructureTreeBuilder
                 $out .= ' /Alt (' . $altText . ')';
             }
             
-            // Title for all other elements with aria-label
-            // Uses /T (Title) instead of /Alt for non-image elements
-            // This is more semantically correct according to PDF spec
+            // Title for elements with aria-label OR auto-generated for table rows/cells
+            $titleText = null;
+
             if (!$semantic->isImage() && $semantic->hasAriaLabel()) {
-                $ariaLabel = TCPDF_STATIC::_escape($semantic->getAriaLabel());
-                $out .= ' /T (' . $ariaLabel . ')';
+                $titleText = $semantic->getAriaLabel();
+            } elseif ($pdfTag === 'TR' && ($parent = $semantic->getParent())) {
+                // Count TR position among siblings
+                $rowNum = 1;
+                foreach ($parent->getChildren() as $sibling) {
+                    if ($sibling->id === $semantic->id) break;
+                    if ($sibling->tag === 'tr') $rowNum++;
+                }
+                $titleText = "Row #$rowNum";
+            } elseif (($pdfTag === 'TH' || $pdfTag === 'TD') && ($trParent = $semantic->getParent()) && $trParent->tag === 'tr') {
+                // Count TR row number, then TD/TH col number
+                $rowNum = 1;
+                if ($tableSection = $trParent->getParent()) {
+                    foreach ($tableSection->getChildren() as $tr) {
+                        if ($tr->id === $trParent->id) break;
+                        if ($tr->tag === 'tr') $rowNum++;
+                    }
+                }
+                $colNum = 1;
+                foreach ($trParent->getChildren() as $cell) {
+                    if ($cell->id === $semantic->id) break;
+                    if (in_array($cell->tag, ['th', 'td'], true)) $colNum++;
+                }
+                $titleText = "row #$rowNum, col #$colNum";
+            }
+
+            if ($titleText !== null && trim($titleText) !== '') {
+                $escapedTitle = TCPDF_STATIC::_escape($titleText);
+                $out .= ' /T (' . $escapedTitle . ')';
             }
             
             // Add TH Scope attribute
