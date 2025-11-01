@@ -46,6 +46,13 @@ class TaggingStateManager
     private ?int $activeSemanticMCID = null;
     
     /**
+     * Frame ID of the currently open semantic BDC
+     * null = No semantic BDC is open
+     * @var string|null
+     */
+    private ?string $activeSemanticFrameId = null;
+    
+    /**
      * Current MCID (Marked Content ID) counter
      * Increments for each semantic BDC block opened
      * @var int
@@ -90,6 +97,18 @@ class TaggingStateManager
     }
     
     /**
+     * Get the Frame ID of the currently active semantic BDC
+     * 
+     * CRITICAL: This is used to determine if drawing is for SAME or DIFFERENT frame.
+     * 
+     * @return string|null Frame ID or null if no semantic BDC is open
+     */
+    public function getActiveSemanticFrameId(): ?string
+    {
+        return $this->activeSemanticFrameId;
+    }
+    
+    /**
      * Open a semantic BDC block
      * 
      * CRITICAL: Automatically closes any open Artifact BDC!
@@ -107,6 +126,7 @@ class TaggingStateManager
         
         $this->state = TaggingState::SEMANTIC;
         $this->activeSemanticMCID = $mcid;
+        $this->activeSemanticFrameId = $frameId;
     }
     
     /**
@@ -117,11 +137,13 @@ class TaggingStateManager
     public function closeSemanticBDC(): void
     {
         SimpleLogger::log("pdf_backend_state_manager_logs", __METHOD__, 
-            sprintf("Closing Semantic BDC: mcid=%s", 
+            sprintf("Closing Semantic BDC: frameId=%s, mcid=%s", 
+                $this->activeSemanticFrameId ?? 'null',
                 $this->activeSemanticMCID !== null ? (string)$this->activeSemanticMCID : 'null'));
         
         $this->state = TaggingState::NONE;
         $this->activeSemanticMCID = null;
+        $this->activeSemanticFrameId = null;
     }
     
     // ========================================================================

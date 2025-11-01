@@ -98,6 +98,11 @@ class TextProcessor implements ContentProcessor
         // STEP 2: Check current state and node properties
         // ========================================================================
         
+        // CRITICAL: Non-semantic wrappers (html, body) should be transparent (no tagging)
+        if ($node->isNonSemanticWrapper()) {
+            return TextDecision::CONTINUE;
+        }
+        
         $currentState = $stateManager->getState();
         $hasDecorativeParent = $node->hasDecorativeParent();
         $isTextNode = $node->isTextNode();
@@ -251,6 +256,22 @@ class TextProcessor implements ContentProcessor
                 $parentNode = $node->isTextNode() || $node->isTransparentInlineTag()
                     ? $node->getNearestBlockParent()
                     : $node->getParent();
+                
+                // Skip non-semantic wrappers (html, body) when finding parent for tagging
+                while ($parentNode !== null && $parentNode->isNonSemanticWrapper()) {
+                    $parentNode = $parentNode->getParent();
+                }
+                
+                // Fallback: If no semantic parent exists, wrap as artifact
+                if ($parentNode === null) {
+                    $output .= TagOps::artifactOpen();
+                    $stateManager->openArtifactBDC();
+                    $output .= $contentRenderer();
+                    $output .= TagOps::artifactClose();
+                    $stateManager->closeArtifactBDC();
+                    break;
+                }
+                
                 $pdfTag = $parentNode->getPdfStructureTag();
 
                 // Open new semantic BDC (no closing needed)

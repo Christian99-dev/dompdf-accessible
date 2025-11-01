@@ -106,10 +106,11 @@ class AccessibleTCPDF extends TCPDF
 
     /**
      * Counter for /StructParent indices in annotations
-     * Page uses index 0, annotations start from 1
+     * CRITICAL: Start at high value (10000) to avoid collision with MCID indices!
+     * MCIDs use indices 0, 1, 2, ... and annotations use 10000, 10001, 10002, ...
      * @var int
      */
-    private int $structParentCounter = 1;
+    private int $structParentCounter = 10000;
     
     /**
      * Callback for BDC opened event
@@ -213,17 +214,11 @@ class AccessibleTCPDF extends TCPDF
         // - StructureTreeBuilder receives only what it needs (no dependencies!)
         // ========================================================================
         $this->onBDCOpenedCallback = function(string $frameId, int $mcid, string $pdfTag, int $pageNumber): void {
-            // Get node from SemanticTree
-            if ($this->semanticTree === null) {
-                return;
-            }
+            if ($this->semanticTree === null) return;
             
             $node = $this->semanticTree->getNodeById($frameId);
-            if ($node === null) {
-                return;
-            }
+            if ($node === null) return;
             
-            // Add to StructureTreeBuilder (with deduplication)
             $this->structureTreeBuilder->add($node, $mcid, $pageNumber);
         };
     }
@@ -416,44 +411,64 @@ class AccessibleTCPDF extends TCPDF
                         'page' => $page,
                         'struct_parent' => $this->structParentCounter++
                     ];
+                    
+                    // Register annotation with StructureTreeBuilder
+                    // CRITICAL: If current frame is a text node, use its parent (the <a> tag)!
+                    if ($this->currentFrameId !== null) {
+                        $frameIdForAnnotation = $this->currentFrameId;
+                        
+                        // Get semantic node
+                        $node = $this->semanticTree->getNodeById($this->currentFrameId);
+                        
+                        // If text node, use its direct parent (the <a> tag)
+                        if ($node !== null && $node->isTextNode()) {
+                            $parentNode = $node->getParent();
+                            if ($parentNode !== null) {
+                                $frameIdForAnnotation = $parentNode->id;
+                            }
+                        }
+                        
+                        $this->structureTreeBuilder->addAnnotation(
+                            $frameIdForAnnotation,
+                            $lastAnnot['n']
+                        );
+                    }
                 }
             }
         }
     }
     
     /**
-     * Override _putannotsobjs() to add /StructParent to Link annotations
+     * Override _putannotsobjs() to inject /StructParent into Link annotations
      * 
-     * MINIMAL override: Use parent for everything, then post-process PageAnnots
-     * to inject /StructParent into Link annotations before parent outputs them.
-     * 
-     * CLEAN: No TagOps needed - just array manipulation
+     * SOLUTION: We patched TCPDF's tcpdf.php (line ~8314) to always output /Contents
+     * and to read 'structparent' from opt array. Now we just inject the values!
      * 
      * @protected
      */
     protected function _putannotsobjs()
     {
-        // PDF/UA FIX: Inject /StructParent into Link annotations BEFORE parent processes them
-        if ($this->pdfua) {
-            foreach ($this->annotationObjects as $annot) {
-                $page = $annot['page'];
-                if (isset($this->PageAnnots[$page])) {
-                    // Find the annotation in PageAnnots by obj_id
-                    foreach ($this->PageAnnots[$page] as $key => $pageAnnot) {
-                        if ($pageAnnot['n'] === $annot['obj_id']) {
-                            // Inject /StructParent into opt array
-                            // TCPDF's _putannotsobjs() will read this and include it in PDF output
-                            if (!isset($this->PageAnnots[$page][$key]['opt']['StructParent'])) {
-                                $this->PageAnnots[$page][$key]['opt']['StructParent'] = $annot['struct_parent'];
-                            }
-                            break;
-                        }
-                    }
+        // Skip if not PDF/UA mode
+        if (!$this->pdfua) {
+            parent::_putannotsobjs();
+            return;
+        }
+        
+        // Inject /StructParent into PageAnnots BEFORE parent processes
+        foreach ($this->annotationObjects as $annot) {
+            $page = $annot['page'];
+            if (!isset($this->PageAnnots[$page])) continue;
+            
+            foreach ($this->PageAnnots[$page] as $key => $pageAnnot) {
+                if ($pageAnnot['n'] === $annot['obj_id']) {
+                    // Inject /StructParent (TCPDF patch reads this!)
+                    $this->PageAnnots[$page][$key]['opt']['structparent'] = $annot['struct_parent'];
+                    break;
                 }
             }
         }
         
-        // Call parent - it will now output our injected /StructParent values
+        // Call parent - our patched TCPDF will output /Contents and /StructParent!
         parent::_putannotsobjs();
     }
     

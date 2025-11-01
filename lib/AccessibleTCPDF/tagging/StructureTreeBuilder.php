@@ -40,6 +40,14 @@ class StructureTreeBuilder
     private array $registeredKeys = [];
 
     /**
+     * Frame ID to Annotation Object ID mapping
+     * Stores which annotation belongs to which frame/element
+     * Format: [ frameId => annotObjId, ... ]
+     * @var array
+     */
+    private array $frameAnnotations = [];
+
+    /**
      * Cached Structure Tree Root object ID after build()
      * @var int|null
      */
@@ -76,18 +84,33 @@ class StructureTreeBuilder
         // Build unique key for O(1) lookup
         $key = "{$node->id}:{$mcid}:{$page}";
         
-        // Check if already registered (O(1) hash lookup)
+        // Skip if already registered (O(1) hash lookup)
         if (isset($this->registeredKeys[$key])) {
-            return; // Skip duplicate (happens when drawing operations re-open BDC)
+            return; // Happens when drawing operations re-open BDC
         }
         
-        // New entry - register it
+        // Register new entry
         $this->registeredKeys[$key] = true;
         $this->structureTree[] = [
             'mcid' => $mcid,
             'page' => $page,
             'semantic' => $node
         ];
+    }
+
+    /**
+     * Register an annotation for a specific frame
+     * 
+     * Called when an annotation is created (e.g., Link annotation).
+     * Stores the mapping so we can later add /OBJR to the StructElem.
+     * 
+     * @param string $frameId Frame ID of the element that has the annotation
+     * @param int $annotObjId PDF object ID of the annotation
+     * @return void
+     */
+    public function addAnnotation(string $frameId, int $annotObjId): void
+    {
+        $this->frameAnnotations[$frameId] = $annotObjId;
     }
 
     /**
@@ -200,12 +223,6 @@ class StructureTreeBuilder
             $frameIdToObjId[$semantic->id] = ++$nextN;
         }
         
-        // Calculate IDs for Link annotations
-        $numLinkStructElems = count($annotationObjects);
-        $calculatedLinkObjIds = [];
-        for ($i = 0; $i < $numLinkStructElems; $i++) {
-            $calculatedLinkObjIds[] = ++$nextN;
-        }
         
         $parentTreeObjId = ++$nextN;
         $documentObjId = ++$nextN;
@@ -287,11 +304,19 @@ class StructureTreeBuilder
                     $out .= sprintf(' /Pg %d 0 R', $pageObjIds[$pageNum]);
                 }
                 
-                // Add MCID(s)
-                if (count($mcids) === 1) {
-                    $out .= ' /K ' . $mcids[0];
+                // Build /K array with MCIDs and optional /OBJR
+                $kItems = $mcids;
+                
+                // Check if this element has an annotation
+                if (isset($this->frameAnnotations[$semantic->id])) {
+                    $kItems[] = '<< /Type /OBJR /Obj ' . $this->frameAnnotations[$semantic->id] . ' 0 R >>';
+                }
+                
+                // Add MCID(s) and optional /OBJR
+                if (count($kItems) === 1) {
+                    $out .= ' /K ' . $kItems[0];
                 } else {
-                    $out .= ' /K [' . implode(' ', $mcids) . ']';
+                    $out .= ' /K [' . implode(' ', $kItems) . ']';
                 }
             } else {
                 // Container element → has child StructElems
@@ -412,26 +437,6 @@ class StructureTreeBuilder
             );
         }
         
-        // Build Link StructElem strings
-        $linkStructElemObjIds = [];
-        foreach ($annotationObjects as $annot) {
-            $linkObjId = array_shift($calculatedLinkObjIds);
-            
-            $out = '<<';
-            $out .= ' /Type /StructElem';
-            $out .= ' /S /Link';
-            $out .= sprintf(' /P %d 0 R', $documentObjId);
-            $out .= sprintf(' /K << /Type /OBJR /Obj %d 0 R >>', $annot['obj_id']);
-            
-            $altText = !empty($annot['url']) ? 'Link to ' . $annot['url'] : $annot['text'];
-            $out .= ' /Alt (' . TCPDF_STATIC::_escape($altText) . ')';
-            
-            $out .= ' >>';
-            $out .= "\n".'endobj';
-            
-            $strings[] = $out;
-            $linkStructElemObjIds[] = $linkObjId;
-        }
         
         // Collect top-level StructElem IDs (parent not in structure tree)
         $topLevelObjIds = [];
@@ -442,16 +447,21 @@ class StructureTreeBuilder
             }
         }
         
-        // Links are also top-level
-        $topLevelObjIds = array_merge($topLevelObjIds, $linkStructElemObjIds);
-        
         SimpleLogger::log("pdf_backend_structure_tree_logs", __METHOD__, 
-            sprintf("Document /K will reference %d top-level StructElems", count($topLevelObjIds))
+            sprintf("Document /K will reference %d top-level StructElems (no more separate Link objects)", count($topLevelObjIds))
         );
         
         // Build ParentTree string
+        // ARCHITECTURE: ParentTree maps:
+        // 1. Page /StructParents (index 1) → ARRAY of all StructElems on page
+        // 2. Annotation /StructParent (indices 10000, 10001, ...) → individual StructElem
+        //
+        // CRITICAL: MCIDs are NOT mapped in ParentTree!
+        // MCIDs reference StructElems via /K arrays IN the StructElems!
         $out = '<< /Nums [';
-        $out .= ' 1 [';  // Adobe ignores index 0, use 1 for page
+        
+        // Add Page /StructParents → Array of all StructElems
+        $out .= ' 1 [';  // Adobe ignores index 0, use 1 for first page
         if (!empty($mcidToObjId)) {
             ksort($mcidToObjId);
             $mcidObjRefs = array_map(fn($objId) => $objId . ' 0 R', $mcidToObjId);
@@ -459,10 +469,20 @@ class StructureTreeBuilder
         }
         $out .= ']';
         
-        // Annotation indices
-        foreach ($linkStructElemObjIds as $idx => $linkObjId) {
-            $annotIndex = $idx + 2;
-            $out .= sprintf(' %d %d 0 R', $annotIndex, $linkObjId);
+        // Annotation /StructParent indices → StructElem refs
+        // Performance: Create reverse map once (O(n)) instead of array_search per annotation (O(n²))
+        $annotToFrame = array_flip($this->frameAnnotations);  // annotObjId → frameId
+        
+        foreach ($annotationObjects as $annot) {
+            $structParent = $annot['struct_parent'];
+            $annotObjId = $annot['obj_id'];
+            
+            // O(1) lookup instead of O(n) search
+            if (isset($annotToFrame[$annotObjId], $frameIdToObjId[$annotToFrame[$annotObjId]])) {
+                $frameId = $annotToFrame[$annotObjId];
+                $structElemObjId = $frameIdToObjId[$frameId];
+                $out .= sprintf(' %d %d 0 R', $structParent, $structElemObjId);
+            }
         }
         
         $out .= ' ] >>';

@@ -12,13 +12,26 @@
 enum DrawingDecision
 {
     /**
-     * Interrupt semantic BDC
+     * Interrupt semantic BDC - SAME frame (reuse MCID)
      * 
      * Used when:
-     * - Semantic BDC is currently open
-     * - Need to: Close semantic → Open artifact → Draw → Close artifact → Re-open semantic
+     * - Semantic BDC is open for frameId X
+     * - Drawing is for SAME frameId X
+     * - Example: Text underline/strikethrough
+     * - Action: Close → Artifact → Draw → Close → Reopen with SAME MCID
      */
-    case CLOSE_BDC_ARTIFACT_REOPEN;
+    case CLOSE_BDC_ARTIFACT_REOPEN_SAME;
+    
+    /**
+     * Close semantic BDC and draw as artifact (no reopen)
+     * 
+     * Used when:
+     * - Semantic BDC is open for frameId X
+     * - Drawing is for DIFFERENT frameId Y
+     * - Example: H1 active, H2 background draws
+     * - Action: Close → Artifact → Draw → Stay in artifact (NO reopen!)
+     */
+    case CLOSE_BDC_ARTIFACT;
     
     /**
      * Continue in existing Artifact

@@ -71,13 +71,25 @@ class DrawingProcessor implements ContentProcessor
         $renderedContent = $contentRenderer();
         
         // Make decision based on current state
+        $currentState = $stateManager->getState();
+        
         // Semantic BDC open? → Need interruption
-        if ($stateManager->getState() === TaggingState::SEMANTIC) {
-            return [DrawingDecision::CLOSE_BDC_ARTIFACT_REOPEN, $renderedContent];
+        if ($currentState === TaggingState::SEMANTIC) {
+            // CRITICAL: Check if drawing is for SAME frame!
+            $activeFrameId = $stateManager->getActiveSemanticFrameId();
+            
+            if ($frameId === $activeFrameId) {
+                // SAME frame → Reopen with SAME MCID (text interrupted by drawing)
+                return [DrawingDecision::CLOSE_BDC_ARTIFACT_REOPEN_SAME, $renderedContent];
+            } else {
+                // DIFFERENT frame → Just close, draw as artifact, DON'T reopen!
+                // Example: H1 is active, H2 background draws → H2 bg should be artifact
+                return [DrawingDecision::CLOSE_BDC_ARTIFACT, $renderedContent];
+            }
         }
         
         // Artifact BDC open? → Just draw
-        if ($stateManager->getState() === TaggingState::ARTIFACT) {
+        if ($currentState === TaggingState::ARTIFACT) {
             return [DrawingDecision::CONTINUE, $renderedContent];
         }
         
@@ -119,12 +131,10 @@ class DrawingProcessor implements ContentProcessor
         
         // Execute based on decision
         switch ($decision) {
-            case DrawingDecision::CLOSE_BDC_ARTIFACT_REOPEN:
-                // Save state from StateManager (Single Source of Truth!)
-                $savedFrameId = $frameId;
+            case DrawingDecision::CLOSE_BDC_ARTIFACT_REOPEN_SAME:
+                // Save active state (Single Source of Truth!)
+                $savedFrameId = $stateManager->getActiveSemanticFrameId();
                 $savedMcid = $stateManager->getActiveSemanticMCID();
-                
-                // Get PDF tag for re-open
                 $node = $semanticTree->getNodeById($savedFrameId);
                 $savedPdfTag = $node ? $node->getPdfStructureTag() : 'P';
                 
@@ -136,21 +146,37 @@ class DrawingProcessor implements ContentProcessor
                 $output .= TagOps::artifactOpen();
                 $stateManager->openArtifactBDC();
                 
-                // 3. Draw (content already rendered above)
+                // 3. Draw
                 $output .= $renderedContent;
                 
                 // 4. Close artifact BDC
                 $output .= TagOps::artifactClose();
                 $stateManager->closeArtifactBDC();
                 
-                // 5. Re-open semantic BDC with SAME MCID (critical!)
+                // 5. Reopen with SAME MCID (text interrupted by drawing)
                 $output .= TagOps::bdcOpen($savedPdfTag, $savedMcid);
                 $stateManager->openSemanticBDC($savedFrameId, $savedMcid);
                 
-                // Capture for tree log
+                // For logging
                 $frameId = $savedFrameId;
                 $mcid = $savedMcid;
                 $pdfTag = $savedPdfTag;
+                break;
+                
+            case DrawingDecision::CLOSE_BDC_ARTIFACT:
+                // 1. Close semantic BDC
+                $output .= TagOps::emc();
+                $stateManager->closeSemanticBDC();
+                
+                // 2. Open artifact BDC
+                $output .= TagOps::artifactOpen();
+                $stateManager->openArtifactBDC();
+                
+                // 3. Draw (stay in artifact, no reopen!)
+                $output .= $renderedContent;
+                
+                // Note: Artifact stays open! Next text rendering will close it.
+                // No MCID, no callback - this is purely decorative content.
                 break;
                 
             case DrawingDecision::CONTINUE:
