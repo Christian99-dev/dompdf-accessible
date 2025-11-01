@@ -102,7 +102,7 @@ class TextProcessor implements ContentProcessor
         $hasDecorativeParent = $node->hasDecorativeParent();
         $isTextNode = $node->isTextNode();
         $isTransparentInlineTag = $node->isTransparentInlineTag();
-        $isLineBreakNode = $semanticTree->isLinebreakNode($node->id);
+        $isAfterLineBreakNode = $semanticTree->isAfterLinebreakNode($node->id);
         
         // ========================================================================
         // STEP 3: STATE-BASED DECISION TREE
@@ -117,7 +117,7 @@ class TextProcessor implements ContentProcessor
                     return TextDecision::OPEN_ARTEFACT;
                 }
 
-                if ($isLineBreakNode) { 
+                if ($isAfterLineBreakNode) { 
                     // Line break should not open a tag - it's invisible!
                     // If we're in NONE state, open parent's tag first
                     return TextDecision::OPEN_WITH_PARENT_INFO;
@@ -138,7 +138,7 @@ class TextProcessor implements ContentProcessor
                     return TextDecision::CLOSE_SEMANTIC_AND_OPEN_ARTEFACT;
                 }
 
-                if ($isLineBreakNode) { 
+                if ($isAfterLineBreakNode) { 
                     return TextDecision::CONTINUE;
                 }
                 
@@ -158,7 +158,7 @@ class TextProcessor implements ContentProcessor
                     return TextDecision::CONTINUE;
                 }
                 
-                if ($isLineBreakNode) {
+                if ($isAfterLineBreakNode) {
                     // Line break inside artifact tag: just continue!
                     return TextDecision::CONTINUE;
                 }

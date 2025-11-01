@@ -727,10 +727,27 @@ class SemanticTree
 
     // is linebreak node by id, look up one node and check if tag is br
 
-    public function isLinebreakNode(string $nodeId): bool {
-        $node = $this->getNodeById($nodeId - 1);
+    public function isBeforeLinebreakNode(string $nodeId): bool {
+        // If the next node is a <br>, this line is a linebreak and looks something like this
+        // <p>
+        //     Some text <-- this is the node we found
+        //     <br> 
+        //     123
+        // </p>
+        $node = $this->getNodeById($nodeId + 1);
         return $node !== null && $node->tag === 'br';
     }
+
+    public function isAfterLinebreakNode(string $nodeId): bool {
+        // If the previous node is a <br>, this line is after a linebreak 
+        // <p>
+        //     Some text
+        //     <br>
+        //     123  <-- this is the node we found
+        // </p>
+        $node = $this->getNodeById($nodeId - 1);
+        return $node !== null && $node->tag === 'br';
+    }   
     
     // ========================================================================
     // ROOT & STATISTICS

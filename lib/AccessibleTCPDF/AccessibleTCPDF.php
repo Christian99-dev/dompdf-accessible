@@ -947,6 +947,16 @@ class AccessibleTCPDF extends TCPDF
      * @return string PDF code with BDC/EMC tagging
      */
     protected function getCellCode($w, $h=0, $txt='', $border=0, $ln=0, $align='', $fill=false, $link='', $stretch=0, $ignore_min_height=false, $calign='T', $valign='M') {
+        
+        // Add trailing space before <br> to prevent word concatenation
+        if(
+            $this->pdfua && 
+            $this->semanticTree->isBeforeLinebreakNode($this->currentFrameId)
+        ) {
+            $txt = rtrim($txt) . ' ';
+        }
+
+        
         // Get original cell code from parent TCPDF
         $cellCode = parent::getCellCode($w, $h, $txt, $border, $ln, $align, $fill, $link, $stretch, $ignore_min_height, $calign, $valign);    
         
