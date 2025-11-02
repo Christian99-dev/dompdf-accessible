@@ -134,9 +134,21 @@ class DrawingProcessor implements ContentProcessor
             case DrawingDecision::CLOSE_BDC_ARTIFACT_REOPEN_SAME:
                 // Save active state (Single Source of Truth!)
                 $savedFrameId = $stateManager->getActiveSemanticFrameId();
-                $savedMcid = $stateManager->getActiveSemanticMCID();
                 $node = $semanticTree->getNodeById($savedFrameId);
-                $savedPdfTag = $node ? $node->getPdfStructureTag() : 'P';
+                // Resolve the effective PDF tag exactly like TextProcessor does for parent-informed opens:
+                // If node is text or transparent inline, use nearest block parent; skip non-semantic wrappers (html/body)
+                $nodeForTag = $node;
+                if ($node !== null && ($node->isTextNode() || $node->isTransparentInlineTag())) {
+                    $parentNode = $node->getNearestBlockParent();
+                    while ($parentNode !== null && $parentNode->isNonSemanticWrapper()) {
+                        $parentNode = $parentNode->getParent();
+                    }
+                    if ($parentNode !== null) {
+                        $nodeForTag = $parentNode;
+                    }
+                }
+
+                $savedPdfTag = $nodeForTag ? $nodeForTag->getPdfStructureTag() : 'P';
                 
                 // 1. Close semantic BDC
                 $output .= TagOps::emc();
@@ -153,13 +165,20 @@ class DrawingProcessor implements ContentProcessor
                 $output .= TagOps::artifactClose();
                 $stateManager->closeArtifactBDC();
                 
-                // 5. Reopen with SAME MCID (text interrupted by drawing)
-                $output .= TagOps::bdcOpen($savedPdfTag, $savedMcid);
-                $stateManager->openSemanticBDC($savedFrameId, $savedMcid);
+                // 5. Reopen with NEW MCID (each BDC sequence needs unique MCID!)
+                $newMcid = $stateManager->getNextMCID();
+                $output .= TagOps::bdcOpen($savedPdfTag, $newMcid);
+                $stateManager->openSemanticBDC($savedFrameId, $newMcid);
+                
+                // CALLBACK: Notify that BDC was reopened with NEW MCID
+                if ($onBDCOpened !== null) {
+                    $pageNumber = $stateManager->getCurrentPage();
+                    $onBDCOpened($nodeForTag->id, $newMcid, $savedPdfTag, $pageNumber);
+                }
                 
                 // For logging
                 $frameId = $savedFrameId;
-                $mcid = $savedMcid;
+                $mcid = $newMcid;
                 $pdfTag = $savedPdfTag;
                 break;
                 

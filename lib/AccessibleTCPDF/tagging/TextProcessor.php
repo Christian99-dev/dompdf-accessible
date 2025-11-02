@@ -148,7 +148,34 @@ class TextProcessor implements ContentProcessor
                 }
                 
                 if ($isTextNode || $isTransparentInlineTag) {
-                    // Text nodes and transparent inline tags use parent's tag
+                    // 🔥 NEW: Check if we're in the SAME block parent
+                    $activeFrameId = $stateManager->getActiveSemanticFrameId();
+                    if ($activeFrameId !== null) {
+                        $activeNode = $semanticTree->getNodeById($activeFrameId);
+                        if ($activeNode !== null) {
+                            // Get both block parents
+                            $activeParent = $activeNode->isTextNode() || $activeNode->isTransparentInlineTag()
+                                ? $activeNode->getNearestBlockParent()
+                                : $activeNode;
+                            
+                            $currentParent = $node->getNearestBlockParent();
+                            
+                            // Skip wrappers
+                            while ($activeParent && $activeParent->isNonSemanticWrapper()) {
+                                $activeParent = $activeParent->getParent();
+                            }
+                            while ($currentParent && $currentParent->isNonSemanticWrapper()) {
+                                $currentParent = $currentParent->getParent();
+                            }
+                            
+                            // SAME parent? → CONTINUE (no new MCID!)
+                            if ($activeParent && $currentParent && $activeParent->id === $currentParent->id) {
+                                return TextDecision::CONTINUE;
+                            }
+                        }
+                    }
+                    
+                    // DIFFERENT parent → Close and reopen
                     return TextDecision::CLOSE_AND_OPEN_WITH_PARENT_INFO;
                 }
                 
