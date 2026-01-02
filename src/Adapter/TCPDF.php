@@ -11,6 +11,7 @@ use Dompdf\Canvas;
 use Dompdf\CanvasSemanticTrait;
 use Dompdf\Dompdf;
 use Dompdf\FontMetrics;
+use Dompdf\Helpers;
 use Dompdf\SimpleLogger;
 use Dompdf\SemanticTree;
 
@@ -950,10 +951,42 @@ class TCPDF implements Canvas
     function image($img, $x, $y, $w, $h, $resolution = "normal") {
         SimpleLogger::log('tcpdf_logs', '33. ' . __FUNCTION__, "Adding image: {$img} at ({$x}, {$y}) size {$w}x{$h}");
         
+        // Validate image using Dompdf's helper function (same as CPDF adapter)
+        // This ensures proper validation of image access permissions and type detection
+        [$width, $height, $type] = Helpers::dompdf_getimagesize($img, $this->get_dompdf()->getHttpContext());
+        
+        // Handle different image types, similar to CPDF adapter
         try {
-            // TCPDF's Image method handles most image formats automatically
-            // Parameters: file, x, y, w, h, type, link, align, resize, dpi, palign, ismask, imgmask, border, fitbox, hidden, fitonpage, alt, altimgs
-            $this->_pdf->Image($img, $x, $y, $w, $h, '', '', '', false, 300, '', false, false, 0, false, false, false);
+            // TCPDF doesn't handle file:// URLs properly, convert to filesystem path
+            if (strpos($img, 'file://') === 0) {
+                $img = str_replace('file://', '', $img);
+                SimpleLogger::log('tcpdf_logs', '33c. ' . __FUNCTION__, "Converted file:// URL to path: {$img}");
+            }
+            
+            switch ($type) {
+                case "jpeg":
+                    $this->_pdf->Image($img, $x, $y, $w, $h, 'JPEG', '', '', false, 300, '', false, false, 0, false, false, false);
+                    break;
+                    
+                case "png":
+                    $this->_pdf->Image($img, $x, $y, $w, $h, 'PNG', '', '', false, 300, '', false, false, 0, false, false, false);
+                    break;
+                    
+                case "svg":
+                    // TCPDF requires special ImageSVG method for SVG files
+                    $this->_pdf->ImageSVG($img, $x, $y, $w, $h, '', '', '', 0, false);
+                    break;
+                    
+                case "gif":
+                case "bmp":
+                case "webp":
+                    // TCPDF can handle these formats directly with Image method
+                    $this->_pdf->Image($img, $x, $y, $w, $h, '', '', '', false, 300, '', false, false, 0, false, false, false);
+                    break;
+                    
+                default:
+                    SimpleLogger::log('tcpdf_logs', '33b. ' . __FUNCTION__, "Unknown image type: {$type}");
+            }
         } catch (\Exception $e) {
             SimpleLogger::log('tcpdf_logs', '33a. ' . __FUNCTION__, "Error loading image: " . $e->getMessage());
         }
