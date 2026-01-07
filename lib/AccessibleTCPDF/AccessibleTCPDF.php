@@ -9,7 +9,8 @@ use Dompdf\SimpleLogger;
 use Dompdf\SemanticNode;
 use Dompdf\SemanticTree;
 
-require_once __DIR__ . '/tcpdf/tcpdf.php';
+// TCPDF via Composer
+require_once __DIR__ . '/../../vendor/autoload.php';
 
 // new tagging system
 require_once __DIR__ . '/tagging/TagOps.php';
@@ -449,17 +450,15 @@ class AccessibleTCPDF extends TCPDF
      */
     protected function _putannotsobjs()
     {
-        // PDF/UA: TCPDF blocks /Contents for Links - we must generate them ourselves
-        if (!$this->pdfua || empty($this->annotationObjects)) {
+        if (!$this->pdfua || empty($this->PageAnnots)) {
             parent::_putannotsobjs();
             return;
         }
         
-        // Remove Links from PageAnnots, let parent handle the rest
         $savedLinks = [];
         foreach ($this->PageAnnots as $pg => &$annots) {
             foreach ($annots as $k => $a) {
-                if (($a['opt']['subtype'] ?? null) === 'Link') {
+                if (($a['opt']['Subtype'] ?? null) === 'Link') {
                     $savedLinks[] = ['pg' => $pg, 'data' => $a];
                     unset($annots[$k]);
                 }
@@ -467,25 +466,13 @@ class AccessibleTCPDF extends TCPDF
         }
         parent::_putannotsobjs();
         
-        // Generate Link objects with PDF/UA fields
         foreach ($savedLinks as $link) {
             $pl = $link['data'];
             $n = $link['pg'];
-            $rect = sprintf('%F %F %F %F',                 $pl['x'] * $this->k,
-                $this->pagedim[$n]['h'] - (($pl['y'] + $pl['h']) * $this->k),
-                ($pl['x'] + $pl['w']) * $this->k,
-                $this->pagedim[$n]['h'] - ($pl['y'] * $this->k)
-            );
-            $out = '<</Type /Annot /Subtype /Link /Rect [' . $rect . ']';
-            if (isset($pl['opt']['a'])) $out .= ' /A ' . $pl['opt']['a'];
-            $out .= ' /Contents ' . $this->_textstring($pl['txt'], $pl['n']);
-            $out .= ' /P ' . $this->page_obj_id[$n] . ' 0 R';
-            $out .= ' /NM ' . $this->_datastring(sprintf('%04u-%04u', $n, 0), $pl['n']);
-            $out .= ' /M ' . $this->_datestring($pl['n'], $this->doc_modification_timestamp);
-            $out .= ' /F 4 /Border [0 0 0] /H /I';
+            $rect = sprintf('%F %F %F %F', $pl['x'] * $this->k, $this->pagedim[$n]['h'] - (($pl['y'] + $pl['h']) * $this->k), ($pl['x'] + $pl['w']) * $this->k, $this->pagedim[$n]['h'] - ($pl['y'] * $this->k));
+            $out = '<</Type /Annot /Subtype /Link /Rect [' . $rect . '] /A <</S /URI /URI ' . $this->_datastring($pl['txt'], $pl['n']) . '>> /Contents ' . $this->_textstring($pl['txt'], $pl['n']) . ' /P ' . $this->page_obj_id[$n] . ' 0 R /NM ' . $this->_datastring(sprintf('%04u-%04u', $n, 0), $pl['n']) . ' /M ' . $this->_datestring($pl['n'], $this->doc_modification_timestamp) . ' /F 4 /Border [0 0 0] /H /I';
             if (isset($pl['opt']['structparent'])) $out .= ' /StructParent ' . $pl['opt']['structparent'];
-            $out .= '>>';
-            $this->_out($this->_getobj($pl['n']) . "\n" . $out . "\n" . 'endobj');
+            $this->_out($this->_getobj($pl['n']) . "\n" . $out . '>>' . "\n" . 'endobj');
         }
     }
     
