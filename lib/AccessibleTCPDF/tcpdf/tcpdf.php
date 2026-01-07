@@ -8310,13 +8310,20 @@ class TCPDF {
 						$annots .= ' /FT /'.$pl['opt']['ft'];
 						$formfield = true;
 					}
-					// PDF/UA FIX: Always output /Contents (including for Link annotations)
-					if (!empty($pl['txt'])) {
+
+					// new
+					// // PDF/UA FIX: Always output /Contents (including for Link annotations)
+					// if (!empty($pl['txt'])) {
+					// 	$annots .= ' /Contents '.$this->_textstring($pl['txt'], $annot_obj_id);
+					// }
+					// // PDF/UA FIX: Output /StructParent if present in opt array
+					// if (isset($pl['opt']['structparent'])) {
+					// 	$annots .= ' /StructParent '.intval($pl['opt']['structparent']);
+					// }
+
+					// original
+					if ($pl['opt']['subtype'] !== 'Link') {
 						$annots .= ' /Contents '.$this->_textstring($pl['txt'], $annot_obj_id);
-					}
-					// PDF/UA FIX: Output /StructParent if present in opt array
-					if (isset($pl['opt']['structparent'])) {
-						$annots .= ' /StructParent '.intval($pl['opt']['structparent']);
 					}
 					$annots .= ' /P '.$this->page_obj_id[$n].' 0 R';
 					$annots .= ' /NM '.$this->_datastring(sprintf('%04u-%04u', $n, $key), $annot_obj_id);

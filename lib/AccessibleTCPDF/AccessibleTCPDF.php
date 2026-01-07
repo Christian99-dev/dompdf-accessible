@@ -381,9 +381,13 @@ class AccessibleTCPDF extends TCPDF
             if (!isset($opt['Contents']) && !empty($url)) {
                 $opt['Contents'] = 'Link to ' . $url;
             }
+            
+            // PDF/UA FIX: Set /StructParent for Link annotations
+            // Use unique counter starting at 10000 to avoid collision with MCID
+            $opt['structparent'] = $this->structParentCounter++;
         }
         
-        // Call parent to create the annotation (will use our modified $opt)
+        // Call parent to create the annotation (will use our modified $opt with structparent)
         parent::Annotation($x, $y, $w, $h, $text, $opt, $spaces);
         
         // Track Link annotations for StructTree (PDF/UA requirement)
@@ -409,7 +413,7 @@ class AccessibleTCPDF extends TCPDF
                         'text' => is_string($text) ? $text : 'Link',
                         'url' => $url,
                         'page' => $page,
-                        'struct_parent' => $this->structParentCounter++
+                        'struct_parent' => $opt['structparent']  // Use same value we set in opt
                     ];
                     
                     // Register annotation with StructureTreeBuilder
@@ -439,37 +443,50 @@ class AccessibleTCPDF extends TCPDF
     }
     
     /**
-     * Override _putannotsobjs() to inject /StructParent into Link annotations
-     * 
-     * SOLUTION: We patched TCPDF's tcpdf.php (line ~8314) to always output /Contents
-     * and to read 'structparent' from opt array. Now we just inject the values!
+     * Override _putannotsobjs() to inject /Contents and /StructParent into Link annotations
      * 
      * @protected
      */
     protected function _putannotsobjs()
     {
-        // Skip if not PDF/UA mode
-        if (!$this->pdfua) {
+        // PDF/UA: TCPDF blocks /Contents for Links - we must generate them ourselves
+        if (!$this->pdfua || empty($this->annotationObjects)) {
             parent::_putannotsobjs();
             return;
         }
         
-        // Inject /StructParent into PageAnnots BEFORE parent processes
-        foreach ($this->annotationObjects as $annot) {
-            $page = $annot['page'];
-            if (!isset($this->PageAnnots[$page])) continue;
-            
-            foreach ($this->PageAnnots[$page] as $key => $pageAnnot) {
-                if ($pageAnnot['n'] === $annot['obj_id']) {
-                    // Inject /StructParent (TCPDF patch reads this!)
-                    $this->PageAnnots[$page][$key]['opt']['structparent'] = $annot['struct_parent'];
-                    break;
+        // Remove Links from PageAnnots, let parent handle the rest
+        $savedLinks = [];
+        foreach ($this->PageAnnots as $pg => &$annots) {
+            foreach ($annots as $k => $a) {
+                if (($a['opt']['subtype'] ?? null) === 'Link') {
+                    $savedLinks[] = ['pg' => $pg, 'data' => $a];
+                    unset($annots[$k]);
                 }
             }
         }
-        
-        // Call parent - our patched TCPDF will output /Contents and /StructParent!
         parent::_putannotsobjs();
+        
+        // Generate Link objects with PDF/UA fields
+        foreach ($savedLinks as $link) {
+            $pl = $link['data'];
+            $n = $link['pg'];
+            $rect = sprintf('%F %F %F %F',                 $pl['x'] * $this->k,
+                $this->pagedim[$n]['h'] - (($pl['y'] + $pl['h']) * $this->k),
+                ($pl['x'] + $pl['w']) * $this->k,
+                $this->pagedim[$n]['h'] - ($pl['y'] * $this->k)
+            );
+            $out = '<</Type /Annot /Subtype /Link /Rect [' . $rect . ']';
+            if (isset($pl['opt']['a'])) $out .= ' /A ' . $pl['opt']['a'];
+            $out .= ' /Contents ' . $this->_textstring($pl['txt'], $pl['n']);
+            $out .= ' /P ' . $this->page_obj_id[$n] . ' 0 R';
+            $out .= ' /NM ' . $this->_datastring(sprintf('%04u-%04u', $n, 0), $pl['n']);
+            $out .= ' /M ' . $this->_datestring($pl['n'], $this->doc_modification_timestamp);
+            $out .= ' /F 4 /Border [0 0 0] /H /I';
+            if (isset($pl['opt']['structparent'])) $out .= ' /StructParent ' . $pl['opt']['structparent'];
+            $out .= '>>';
+            $this->_out($this->_getobj($pl['n']) . "\n" . $out . "\n" . 'endobj');
+        }
     }
     
     /**
