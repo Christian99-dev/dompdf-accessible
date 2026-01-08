@@ -9,8 +9,6 @@ use Dompdf\SimpleLogger;
 use Dompdf\SemanticNode;
 use Dompdf\SemanticTree;
 
-// TCPDF via Composer
-require_once __DIR__ . '/../../vendor/autoload.php';
 
 // new tagging system
 require_once __DIR__ . '/tagging/TagOps.php';
