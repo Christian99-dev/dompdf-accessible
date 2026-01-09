@@ -144,7 +144,7 @@ class TCPDF implements Canvas
      * @param Dompdf|null    $dompdf      The Dompdf instance.
      */
     public function __construct($paper = "letter", string $orientation = "portrait", ?Dompdf $dompdf = null) {
-        SimpleLogger::log('tcpdf_logs', '1. ' . __FUNCTION__, "Constructing TCPDF with paper: {$paper}, orientation: {$orientation}");
+        // SimpleLogger::log('tcpdf_logs', '1. ' . __FUNCTION__, "Constructing TCPDF with paper: {$paper}, orientation: {$orientation}");
         
         if (is_array($paper)) {
             $size = array_map("floatval", $paper);
