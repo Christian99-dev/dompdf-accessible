@@ -160,7 +160,7 @@ class CPDF implements Canvas
 
     public function __construct($paper = "letter", string $orientation = "portrait", ?Dompdf $dompdf = null)
     {
-        SimpleLogger::log('cpdf_logs', '1. ' . __FUNCTION__, "Constructing CPDF with paper: {$paper}, orientation: {$orientation}");
+        // SimpleLogger::log('cpdf_logs', '1. ' . __FUNCTION__, "Constructing CPDF with paper: {$paper}, orientation: {$orientation}");
         
         if (is_array($paper)) {
             $size = array_map("floatval", $paper);
