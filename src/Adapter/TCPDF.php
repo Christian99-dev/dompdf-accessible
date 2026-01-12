@@ -163,12 +163,10 @@ class TCPDF implements Canvas
             $this->_dompdf = $dompdf;
         }
 
-        // Convert to TCPDF format - TCPDF uses width and height in mm
-        // $width_mm = ($size[2] - $size[0]) * 0.352778; // Convert points to mm
-        // $height_mm = ($size[3] - $size[1]) * 0.352778; // Convert points to mm
-
-        // Initialize TCPDF
-        $tcpdf_orientation = strtolower($orientation) === "landscape" ? 'L' : 'P';
+        $width = $size[2] - $size[0];
+        $height = $size[3] - $size[1];
+        $tcpdf_orientation = ($width > $height) ? 'L' : 'P';
+        $tcpdf_format = [$width, $height];
 
 
         // Initializing the semantic tree in the canvas constructor is optional.
@@ -181,7 +179,7 @@ class TCPDF implements Canvas
         $this->_pdf = new AccessibleTCPDF(
             $tcpdf_orientation, 
             'pt', 
-            [$size[2] - $size[0], $size[3] - $size[1]], 
+            $tcpdf_format, 
             true, 
             'UTF-8', 
             false,
@@ -197,6 +195,9 @@ class TCPDF implements Canvas
         $this->_pdf->SetSubject('');
         $this->_pdf->SetKeywords('');
 
+        $this->_width = $width;
+        $this->_height = $height;
+
         // Remove default header/footer
         $this->_pdf->setPrintHeader(false);
         $this->_pdf->setPrintFooter(false);
@@ -209,11 +210,7 @@ class TCPDF implements Canvas
         $this->_pdf->setCellMargins(0,0,0,0);
         $this->_pdf->setCellHeightRatio(1);
 
-        // Add first page
-        $this->_pdf->AddPage();
-
-        $this->_width = $size[2] - $size[0];
-        $this->_height = $size[3] - $size[1];
+        $this->_pdf->AddPage($tcpdf_orientation, $tcpdf_format);
     }
 
     /**
@@ -1580,7 +1577,8 @@ class TCPDF implements Canvas
      */
     function new_page() {
         SimpleLogger::log('tcpdf_logs', '6. ' . __FUNCTION__, "Creating new page");
-        $this->_pdf->AddPage();
+        $orientation = ($this->_width > $this->_height) ? 'L' : 'P';
+        $this->_pdf->AddPage($orientation, [$this->_width, $this->_height]);
     }
 
     /**
