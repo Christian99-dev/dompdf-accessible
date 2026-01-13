@@ -590,6 +590,10 @@ class TCPDF implements Canvas
     public function clipping_polygon(array $points): void {
         SimpleLogger::log('tcpdf_logs', '16. ' . __FUNCTION__, "Setting clipping polygon with " . count($points) . " points");
         
+        // PDF/UA FIX: Save graphics state before clipping
+        // This ensures Q in clipping_end() has a matching q
+        $this->_pdf->StartTransform();
+        
         // For now, store clipping information for later implementation
         // TCPDF polygon clipping is complex and may require direct PDF commands
         // This is a placeholder that stores the clipping state
@@ -602,6 +606,7 @@ class TCPDF implements Canvas
     function clipping_end() {
         SimpleLogger::log('tcpdf_logs', '17. ' . __FUNCTION__, "Ending clipping");
         
+        // PDF/UA FIX: Only restore if we started transform in clipping_polygon
         // Restore graphics state
         $this->_pdf->StopTransform();
         
