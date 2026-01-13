@@ -69,7 +69,26 @@ class TreeLogger
         
         self::$operationCounter++;
     }
-    
+
+    /** 
+     * Log image operation with compact tree structure
+     */
+    public static function logImageOperation(
+        string $decision,
+        ?string $frameId,
+        ?string $nodeId,
+        ?string $pdfTag,
+        ?int $mcid,
+        int $page,
+        string $output,
+        TaggingState $stateBeforeOperation
+    ): void {
+        self::checkPageChange($page);   
+        $tree = self::buildCompactDrawingTree($decision, $frameId, $nodeId, $pdfTag, $mcid, $page, $output, $stateBeforeOperation);
+        SimpleLogger::log("pdf_backend_tagging_logs", "\nIMAGE", "\n$tree");
+        self::$operationCounter++;
+    }
+
     /**
      * Log a drawing operation with compact tree structure
      * 

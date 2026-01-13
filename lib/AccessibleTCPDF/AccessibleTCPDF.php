@@ -16,6 +16,7 @@ require_once __DIR__ . '/tagging/TaggingStateManager.php';
 require_once __DIR__ . '/tagging/ContentProcessor.php';
 require_once __DIR__ . '/tagging/TextProcessor.php';
 require_once __DIR__ . '/tagging/DrawingProcessor.php';
+require_once __DIR__ . '/tagging/ImageProcessor.php';
 require_once __DIR__ . '/tagging/StructureTreeBuilder.php';
 
 // SemanticTree for node access
@@ -49,6 +50,12 @@ class AccessibleTCPDF extends TCPDF
      * @var DrawingProcessor
      */
     private DrawingProcessor $drawingProcessor;
+
+    /**
+     * Image Processor - Handles image rendering with PDF/UA tagging
+     * @var ImageProcessor
+     */
+    private ImageProcessor $imageProcessor;
 
     /**
      * Structure Tree Builder - Manages the PDF structure tree for accessibility
@@ -194,6 +201,9 @@ class AccessibleTCPDF extends TCPDF
         
         // Drawing Processor - No dependencies (receives state via process())
         $this->drawingProcessor = new DrawingProcessor();
+
+        // Image Processor - No dependencies (receives state via process())
+        $this->imageProcessor = new ImageProcessor();
 
         // Structure Tree Builder - NO dependencies! Pure data collector
         $this->structureTreeBuilder = new StructureTreeBuilder();
@@ -1121,6 +1131,30 @@ class AccessibleTCPDF extends TCPDF
             $this->semanticTree,
             fn() => $this->captureParentOutput(
                 fn() => parent::Polygon($p, $style, $line_style, $fill_color, $closed)
+            ),
+            $this->onBDCOpenedCallback  // Pass callback!
+        );
+        
+        $this->_out($output);
+    }
+
+    /**
+     * Override Image() using ImageProcessor pattern
+     */
+    public function Image($file, $x='', $y='', $w=0, $h=0, $type='', $link='', $align='', $resize=false, $dpi=300, $palign='', $ismask=false, $imgmask=false, $border=0, $fitbox=false, $hidden=false, $fitonpage=false, $alt=false, $altimgs=array()) {
+        // If not PDF/UA mode OR we're inside captureParentOutput, call parent directly
+        if ($this->pdfua !== true || $this->isCapturingParentOutput) {
+            parent::Image($file, $x, $y, $w, $h, $type, $link, $align, $resize, $dpi, $palign, $ismask, $imgmask, $border, $fitbox, $hidden, $fitonpage, $alt, $altimgs);
+            return;
+        }
+        
+        // Use ImageProcessor to handle tagging
+        $output = $this->imageProcessor->process(
+            $this->currentFrameId,
+            $this->taggingStateManager,
+            $this->semanticTree,
+            fn() => $this->captureParentOutput(
+                fn() => parent::Image($file, $x, $y, $w, $h, $type, $link, $align, $resize, $dpi, $palign, $ismask, $imgmask, $border, $fitbox, $hidden, $fitonpage, $alt, $altimgs)
             ),
             $this->onBDCOpenedCallback  // Pass callback!
         );
