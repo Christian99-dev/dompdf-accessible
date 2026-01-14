@@ -347,10 +347,35 @@ class StructureTreeBuilder
                 }
             }
             
-            // Add alt text for images
-            if ($semantic->isImage() && $semantic->hasAltText()) {
-                $altText = TCPDF_STATIC::_escape($semantic->getAltText());
-                $out .= ' /Alt (' . $altText . ')';
+            // Add alt text for images (priority: alt attribute > aria-label)
+            if ($semantic->isImage()) {
+                $altText = null;
+                $altSource = null;
+                
+                // Priority 1: alt attribute
+                if ($semantic->hasAltText()) {
+                    $altText = $semantic->getAltText();
+                    $altSource = 'alt';
+                }
+                // Priority 2: aria-label as fallback
+                elseif ($semantic->hasAriaLabel()) {
+                    $altText = $semantic->getAriaLabel();
+                    $altSource = 'aria-label';
+                }
+                
+                // Add /Alt if we have text from either source
+                if ($altText !== null && trim($altText) !== '') {
+                    $escapedAlt = TCPDF_STATIC::_escape($altText);
+                    $out .= ' /Alt (' . $escapedAlt . ')';
+                    
+                    SimpleLogger::log("pdf_backend_structure_tree_logs", __METHOD__, 
+                        sprintf("Image frame %d: /Alt from %s = '%s'", $semantic->id, $altSource, $altText)
+                    );
+                } else {
+                    SimpleLogger::log("pdf_backend_structure_tree_logs", __METHOD__, 
+                        sprintf("Image frame %d: No /Alt text (no alt or aria-label)", $semantic->id)
+                    );
+                }
             }
             
             // Title for elements with aria-label OR auto-generated for table rows/cells
