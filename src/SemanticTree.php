@@ -348,10 +348,9 @@ class SemanticNode
         if ($this->getAttribute('aria-hidden') === 'true') {
             return true;
         }
-        
-        // role="presentation" or role="none" means decorative
-        $role = $this->getAttribute('role');
-        if ($role === 'presentation' || $role === 'none') {
+
+        // if it is an image without alt text, it is decorative
+        if ($this->isImage() && (!$this->hasAltText() || $this->getAltText() == "")) {
             return true;
         }
         
