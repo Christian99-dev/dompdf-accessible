@@ -1161,4 +1161,28 @@ class AccessibleTCPDF extends TCPDF
         
         $this->_out($output);
     }
+
+    /**
+     * Override ImageSVG() using ImageProcessor pattern
+     */
+    public function ImageSVG($file, $x=null, $y=null, $w=0, $h=0, $link='', $align='', $palign='', $border=0, $fitonpage=false) {
+        // If not PDF/UA mode OR we're inside captureParentOutput, call parent directly
+        if ($this->pdfua !== true || $this->isCapturingParentOutput) {
+            parent::ImageSVG($file, $x, $y, $w, $h, $link, $align, $palign, $border, $fitonpage);
+            return;
+        }
+        
+        // Use ImageProcessor to handle tagging
+        $output = $this->imageProcessor->process(
+            $this->currentFrameId,
+            $this->taggingStateManager,
+            $this->semanticTree,
+            fn() => $this->captureParentOutput(
+                fn() => parent::ImageSVG($file, $x, $y, $w, $h, $link, $align, $palign, $border, $fitonpage)
+            ),
+            $this->onBDCOpenedCallback  // Pass callback!
+        );
+        
+        $this->_out($output);
+    }
 }
