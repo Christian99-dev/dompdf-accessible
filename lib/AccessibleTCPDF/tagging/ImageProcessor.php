@@ -105,6 +105,8 @@ class ImageProcessor implements ContentProcessor
                     ? ImageDecision::CLOSE_ARTEFACT_AND_OPEN_ARTEFACT_AND_CLOSE
                     : ImageDecision::CLOSE_ARTEFACT_AND_OPEN_SEMANTIC_AND_CLOSE;
         }
+
+        return ImageDecision::OPEN_SEMANTIC_AND_CLOSE; // Fallback (should not reach here)
     }
     
     /**
